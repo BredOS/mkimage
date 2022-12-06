@@ -307,9 +307,9 @@ def compressimage(img_name):
 def copyfiles(ot, to,retainperms=False):
     logging.info("Copying files to " + to)
     if retainperms:
-        subprocess.run("cp -apr" + ot + "/* " +  to,shell=True)
+        subprocess.run("cp -apr " + ot + "/* " +  to,shell=True)
     else:
-        subprocess.run("cp -ar" + ot + "/* " +  to,shell=True)
+        subprocess.run("cp -ar " + ot + "/* " +  to,shell=True)
 
 def main():
     logging.basicConfig(

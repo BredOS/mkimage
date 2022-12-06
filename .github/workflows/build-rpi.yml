@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: [self-hosted, linux, ARM64]
+    runs-on: [self-hosted, ARM64]
     steps:
       - uses: actions/checkout@v2
       - name: Install dependencies
@@ -17,6 +17,10 @@ jobs:
           git wget arch-install-scripts
       - name: Submodule update
         run: git submodule update --init --recursive
+      - name: Clean up
+        run: |
+          sudo rm -rf /tmp/work || true
+          sudo rm -rf ./out || true
       - name: Build RebornOS ARM for rpi
         run: |
           sudo python ./mkimage.py -w /tmp/work/ -c ./lxqt-rpi-image/ -o ./out/
