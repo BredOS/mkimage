@@ -371,7 +371,7 @@ def main():
         subprocess.run(["losetup", "-d", ldev])
     elif img_backend == "qemu-nbd":
         subprocess.run(["qemu-nbd", "-d", ldev])
-    compressimage(work_dir,img_name)
+    compressimage(img_name)
 
 def handler(signal_received, frame):
     # Handle any cleanup here
