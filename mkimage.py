@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 import pathlib
-import signal
+from signal import signal, SIGINT
 import subprocess
 import sys
 import time
@@ -137,7 +137,7 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir):
     logging.info("Running pacstrap")
     subprocess.run(
         [
-            "pacstrap"
+            "pacstrap",
             "-d", "-c",
             "-C", pacman_conf, 
             "-G", install_dir
@@ -375,13 +375,13 @@ def main():
 
 def handler(signal_received, frame):
     # Handle any cleanup here
-    logging.info('SIGINT or CTRL-C detected. Exiting gracefully')
+    logging.error('SIGINT or CTRL-C detected. Exiting gracefully')
     try:
         subprocess.run(["umount", "-R", mnt_dir])
     except:
         pass
     try:
-        subprocess.run(["umount", "-R", install_dir])
+        subprocess.run("umount -R " + install_dir + "/*" ,shell=True)
     except:
         pass
     try:
@@ -400,7 +400,7 @@ if __name__ == "__main__":
     elif img_backend == "qemu-nbd":
         subprocess.run(["modprobe","nbd"])
         ldev = "/dev/nbd2"
-    signal(signal.SIGINT, handler)
+    signal(SIGINT, handler)
     main()
 
         

@@ -10,12 +10,12 @@
             "request": "launch",
             "program": "mkimage.py",
             "console": "integratedTerminal",
+            "sudo": true,
             "args": [
                 "-w", "/tmp/work/",
                 "-c", "${workspaceFolder}/lxqt-rpi-image",
                 "-o", "${workspaceFolder}/out"
             ],
-
         }
     ]
 }
