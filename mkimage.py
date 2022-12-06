@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/python
 
 import argparse
 import logging
@@ -62,8 +62,7 @@ def verify_config():
     arch=""
     device=""
     fs=""
-    from profiledef import (arch, cmdline, configtxt, device, edition, fs,
-                            img_backend, img_name, img_type, img_version)
+    from profiledef import arch, cmdline, configtxt, device, edition, fs, img_backend, img_name, img_type, img_version # type: ignore
     packages_file=config_dir + "packages." + arch
     if not arch == 'aarch64' or arch == 'armv7h':
         logging.error("arch incompatable use aarch64 or armv7h")
@@ -201,17 +200,18 @@ def partition_rpi(disk,fs,img_size):
     logging.info("\n"+table_pretty.get_string(title=disk+" Size " + str(int(img_size/1000)) + "M"))
     subprocess.run(
         [
-            "parted", "-s",
-            disk, "mklabel", "msdos",
-            disk, "mkpart", "primary", "fat32", "0%", "150M",
-            disk, "mkpart", "primary", fs, "150M", "100%"
+            "parted",
+            "--script", disk,
+            "mklabel", "msdos",
+            "mkpart", "primary", "fat32", "0%", "150M",
+            "mkpart", "primary", fs, "150M", "100%"
         ]
     )
     subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
     try:
         os.mkdir(work_dir + "/mnt")
     except FileExistsError:
-        pass
+        pass    
     if fs == "btrfs":
         p2 = disk+"p2 "
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2,shell=True)
