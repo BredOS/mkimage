@@ -1,0 +1,3 @@
+[submodule "lxqt-rpi-image"]
+	path = lxqt-rpi-image
+	url = git@github.com:RebornOS-Developers/lxqt-rpi-image.git
