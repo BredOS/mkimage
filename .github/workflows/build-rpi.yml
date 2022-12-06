@@ -29,15 +29,19 @@ jobs:
         id: md5sum
         run: |
           echo "::set-output name=md5sum::$(md5sum ./out/*.img.xz | awk '{print $1}')"
+      - name: Get short commit hash
+        id: commit
+        run: |
+          echo "::set-output name=hash::$(git rev-parse --short HEAD)"
       - name: Create release with commit hash
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v1
         with:
           files: ./out/*.img.xz
-          tag_name: ${{ github.sha }}
+          tag_name: ${{ steps.commit.outputs.hash }}
           draft: true
           prerelease: true
           body: |
             md5sum: ${{ steps.md5sum.outputs.md5sum }}          
           token: ${{ secrets.GITHUB_TOKEN }}
-          name: RebornOS ARM ${{ github.sha }}
+          name: RebornOS ARM ${{ steps.commit.outputs.hash }}
