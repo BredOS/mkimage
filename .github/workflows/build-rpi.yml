@@ -28,7 +28,7 @@ jobs:
       - name: Get image md5sum 
         id: md5sum
         run: |
-          echo "::set-output name=md5sum::$(md5sum ./out/*.img | awk '{print $1}')"
+          echo "::set-output name=md5sum::$(md5sum ./out/*.img.xz | awk '{print $1}')"
       - name: Create release with commit hash
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v1
@@ -38,6 +38,6 @@ jobs:
           draft: true
           prerelease: true
           body: |
-            MD5SUM: ${{ steps.md5sum.outputs.md5sum }}          
+            md5sum: ${{ steps.md5sum.outputs.md5sum }}          
           token: ${{ secrets.GITHUB_TOKEN }}
           name: RebornOS ARM ${{ github.sha }}

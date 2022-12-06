@@ -335,6 +335,8 @@ def main():
     logging.info("               Image type:   "+img_type)
     logging.info("          Image file name:   "+img_name)
     logging.info("            Packages File:   "+packages_file)
+
+    copyfiles(config_dir+ "/alarmimg",install_dir)
     pacstrap_packages(pacman_conf, packages_file, install_dir)
     subprocess.run(' '.join(["rm", "-rf",
         install_dir + "/etc/machine-id",
