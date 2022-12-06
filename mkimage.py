@@ -199,8 +199,6 @@ def partition_rpi(disk,fs,img_size):
     for row in table[1:]:
         table_pretty.add_row(row)
     logging.info("\n"+table_pretty.get_string(title=disk+" Size " + str(int(img_size/1000)) + "M"))
-    input("Press Enter to continue...")
-    # logging.info(table_pretty.get_string(title=disk))
     subprocess.run(
         [
             "parted", "-s",
