@@ -1,0 +1,39 @@
+name: "Build RebornOS ARM for rpi"
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, ARM64]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: |
+          sudo pacman -S --noconfirm --needed \
+          python python-prettytable python-argparse parted btrfs-progs \
+          git wget arch-install-scripts
+      - name: Submodule update
+        run: git submodule update --init --recursive
+      - name: Build RebornOS ARM for rpi
+        run: |
+          sudo python ./mkimage.py -w /tmp/work/ -c ./lxqt-rpi-image/ -o ./out/
+          sudo chown -R $USER:$USER ./out/
+      - name: Get image md5sum 
+        id: md5sum
+        run: |
+          echo "::set-output name=md5sum::$(md5sum ./out/*.img | awk '{print $1}')"
+      - name: Create release with commit hash
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./out/*.img.xz
+          tag_name: ${{ github.sha }}
+          draft: true
+          prerelease: true
+          body: |
+            MD5SUM: ${{ steps.md5sum.outputs.md5sum }}          
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: RebornOS ARM ${{ github.sha }}
