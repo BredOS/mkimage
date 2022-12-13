@@ -81,10 +81,10 @@ def verify_config():
     else:
         logging.error("Filesystem not supported use ext4 or btrfs")
         exit(1)
-    if device == 'rpi' or device == 'odroid' or device == 'generic':
+    if device == 'rpi' or device == 'rock5b' or device == 'generic':
         pass
     else:
-        logging.error("Device not supported use rpi, odroid or generic")
+        logging.error("Device not supported use rpi, rock5b or generic")
         exit(1)
     if not os.path.isfile(packages_file):
         logging.error("packages file doesnt exist create the file packages." + arch)
