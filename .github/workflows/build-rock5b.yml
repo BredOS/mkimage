@@ -1,4 +1,4 @@
-name: "Build RebornOS ARM for rpi"
+name: "Build RebornOS ARM for Rock5b"
 on:
   # push:
   #   branches:
@@ -21,9 +21,9 @@ jobs:
         run: |
           sudo rm -rf /tmp/work || true
           sudo rm -rf ./out || true
-      - name: Build RebornOS ARM for rpi
+      - name: Build RebornOS ARM for rock5b
         run: |
-          sudo python ./mkimage.py -w /tmp/work/ -c ./lxqt-rpi-image/ -o ./out/
+          sudo python ./mkimage.py -w /tmp/work/ -c ./lxqt-rock5b-image/ -o ./out/
           sudo chown -R $USER:$USER ./out/
       - name: Get image md5sum 
         id: md5sum
