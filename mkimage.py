@@ -151,7 +151,7 @@ def makeimg(size,fs,img_name,backend):
     if fs == "btrfs":
         img_size = size - int(390000)
     else:
-        img_size = size + int(990000)
+        img_size = size + int(1100000)
     
     if img_name == "qcow2":        
         logging.info("Creating image file " + img_name + ".qcow2")
@@ -212,8 +212,8 @@ def partition_rpi(disk,fs,img_size):
         os.mkdir(work_dir + "/mnt")
     except FileExistsError:
         pass    
+    p2 = disk+"p2 "
     if fs == "btrfs":
-        p2 = disk+"p2 "
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2,shell=True)
         subprocess.run("mount -t btrfs -o compress=zstd " + p2 + mnt_dir,shell=True)
         subprocess.run("btrfs subvolume create " + mnt_dir + "/@",shell=True)
@@ -226,6 +226,36 @@ def partition_rpi(disk,fs,img_size):
         subprocess.run("mkfs.ext4 -F -L ROOTFS " + p2,shell=True)
         subprocess.run("mount " + p2 + mnt_dir,shell=True)
     os.mkdir(mnt_dir + "/boot")
+
+def partition_rock5b(disk,fs,img_size):
+    table=[
+        ["Partition", "Start", "End","Size", "Filesystem"],
+        ["uboot", "0%", "16M", "16M", "NONE"],
+        ["boot", "16M", "150M", "134M", "fat32"],
+        ["root", "150M", "100%", str(int(img_size/1000)-150) + "M" , fs]]
+    table_pretty = prettytable.PrettyTable(table[0])
+    for row in table[1:]:
+        table_pretty.add_row(row)
+    logging.info("\n"+table_pretty.get_string(title=disk+" Size " + str(int(img_size/1000)) + "M"))
+    subprocess.run(
+        [
+            "parted",
+            "--script", disk,
+            "mklabel", "gpt",
+            "mkpart", "primary", "fat32", "16M", "150M",
+            "set", "1", "boot", "on",
+            "set", "1", "esp", "on",
+            "mkpart", "primary", fs, "150M", "100%"
+        ]
+    )
+    subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
+    subprocess.run("dd if=" + work_dir + "/idbloader.img of=" + disk + " bs=512 seek=64",shell=True)
+    subprocess.run("dd if=" + work_dir + "/u-boot.itb of=" + disk + " bs=512 seek=16384",shell=True)
+    if fs == "ext4":
+        subprocess.run("mkfs.ext4 -F -L ROOTFS " + disk + "p2",shell=True)
+        subprocess.run("mount " + disk + "p2 " + mnt_dir,shell=True)
+    else:
+        exit(1)
 
 def partition_rockpro(disk,fs,img_size):
     table=[
@@ -269,8 +299,8 @@ def partition_rockpro(disk,fs,img_size):
         os.mkdir(work_dir + "/mnt")
     except FileExistsError:
         pass
+    p1 = disk+"p1 "
     if fs == "btrfs":
-        p1 = disk+"p1 "
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p1,shell=True)
         subprocess.run("mount -t btrfs -o compress=zstd " + p1 + mnt_dir,shell=True)
         subprocess.run("btrfs subvolume create " + mnt_dir + "/@",shell=True)
@@ -335,45 +365,74 @@ def main():
     logging.info("               Image type:   "+img_type)
     logging.info("          Image file name:   "+img_name)
     logging.info("            Packages File:   "+packages_file)
-
-    copyfiles(config_dir+ "/alarmimg",install_dir)
-    pacstrap_packages(pacman_conf, packages_file, install_dir)
-    subprocess.run(' '.join(["rm", "-rf",
-        install_dir + "/etc/machine-id",
-        install_dir + "/var/lib/dbus/machine-id"]),shell=True)
-    subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
-    logging.info("Partitioning rpi")
-    rootfs_size=int(subprocess.check_output(["du", "-s", install_dir]).split()[0].decode("utf-8"))
-    img_size,ldev = makeimg(rootfs_size,fs,img_name,img_backend) 
-    partition_rpi(ldev, fs, img_size)
-    logging.info("Partitioned rpi successfully")
-    if not os.path.exists(mnt_dir):
-        os.mkdir(mnt_dir)
-    subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
-    copyfiles(install_dir, mnt_dir,retainperms=True)
-    with open(mnt_dir + "/boot/cmdline.txt", "w") as f:
-        root_uuid=get_partuuid(ldev+"p2")
-        f.write("root=PARTUUID="+root_uuid+" " + cmdline)
-    with open(work_dir + "/mnt/boot/config.txt", "a") as f:
-        f.write(configtxt)
-    if fs == "btrfs":
-        with open(mnt_dir + "/etc/fstab", "a") as f:
-            f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / btrfs subvol=/@,defaults,compress=zstd,discard=async,ssd 0 0\n")
-            f.write("PARTUUID="+get_partuuid(ldev+"p2")+" /home btrfs subvol=/@home,defaults,discard=async,ssd 0 0\n")
-            f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
-    else:
-        with open(mnt_dir + "/etc/fstab", "a") as f:
-            f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / ext4 defaults 0 0\n")
-            f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
-    
-    subprocess.run(["umount", "-R", mnt_dir])
-    if img_backend == "loop":
-        subprocess.run(["losetup", "-d", ldev])
-    elif img_backend == "qemu-nbd":
-        subprocess.run(["qemu-nbd", "-d", ldev])
-    compressimage(img_name)
-    subprocess.run(["chmod", "-R", "777", out_dir])
-    subprocess.run(["rm", "-rf", work_dir])
+    if device == "rpi":
+        copyfiles(config_dir+ "/alarmimg",install_dir)
+        pacstrap_packages(pacman_conf, packages_file, install_dir)
+        subprocess.run(' '.join(["rm", "-rf",
+            install_dir + "/etc/machine-id",
+            install_dir + "/var/lib/dbus/machine-id"]),shell=True)
+        subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
+        logging.info("Partitioning rpi")
+        rootfs_size=int(subprocess.check_output(["du", "-s", install_dir]).split()[0].decode("utf-8"))
+        img_size,ldev = makeimg(rootfs_size,fs,img_name,img_backend) 
+        partition_rpi(ldev, fs, img_size)
+        logging.info("Partitioned rpi successfully")
+        if not os.path.exists(mnt_dir):
+            os.mkdir(mnt_dir)
+        subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
+        copyfiles(install_dir, mnt_dir,retainperms=True)
+        with open(mnt_dir + "/boot/cmdline.txt", "w") as f:
+            root_uuid=get_partuuid(ldev+"p2")
+            f.write("root=PARTUUID="+root_uuid+" " + cmdline)
+        with open(work_dir + "/mnt/boot/config.txt", "a") as f:
+            f.write(configtxt)
+        if fs == "btrfs":
+            with open(mnt_dir + "/etc/fstab", "a") as f:
+                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / btrfs subvol=/@,defaults,compress=zstd,discard=async,ssd 0 0\n")
+                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" /home btrfs subvol=/@home,defaults,discard=async,ssd 0 0\n")
+                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
+        else:
+            with open(mnt_dir + "/etc/fstab", "a") as f:
+                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / ext4 defaults 0 0\n")
+                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
+        
+        subprocess.run(["umount", "-R", mnt_dir])
+        if img_backend == "loop":
+            subprocess.run(["losetup", "-d", ldev])
+        elif img_backend == "qemu-nbd":
+            subprocess.run(["qemu-nbd", "-d", ldev])
+        compressimage(img_name)
+        subprocess.run(["chmod", "-R", "777", out_dir])
+        subprocess.run(["rm", "-rf", work_dir])
+    elif device == "rock5b":
+        copyfiles(config_dir+ "/alarmimg",install_dir)
+        pacstrap_packages(pacman_conf, packages_file, install_dir)
+        subprocess.run(' '.join(["rm", "-rf",
+            install_dir + "/etc/machine-id",
+            install_dir + "/var/lib/dbus/machine-id"]),shell=True)
+        subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
+        logging.info("Partitioning rock5b")
+        rootfs_size=int(subprocess.check_output(["du", "-s", install_dir]).split()[0].decode("utf-8"))
+        img_size,ldev = makeimg(rootfs_size,fs,img_name,img_backend)
+        partition_rock5b(ldev, fs, img_size)
+        logging.info("Partitioned rock5b successfully")
+        if not os.path.exists(mnt_dir):
+            os.mkdir(mnt_dir)
+        subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
+        copyfiles(install_dir, mnt_dir,retainperms=True)
+        with open(mnt_dir + "/boot/extlinux/extlinux.conf", "w") as f:
+            if not os.path.exists(mnt_dir + "/boot/extlinux"):
+                os.mkdir(mnt_dir + "/boot/extlinux")
+            f.write(configtxt)
+        subprocess.run(["umount", "-R", mnt_dir])
+        if img_backend == "loop":
+            subprocess.run(["losetup", "-d", ldev])
+        elif img_backend == "qemu-nbd":
+            subprocess.run(["qemu-nbd", "-d", ldev])
+        compressimage(img_name)
+        subprocess.run(["chmod", "-R", "777", out_dir])
+        subprocess.run(["rm", "-rf", work_dir])
+        
 
 def handler(signal_received, frame):
     # Handle any cleanup here

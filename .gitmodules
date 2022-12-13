@@ -1,3 +1,6 @@
 [submodule "lxqt-rpi-image"]
 	path = lxqt-rpi-image
 	url = https://github.com/RebornOS-Developers/lxqt-rpi-image.git
+[submodule "lxqt-rock5b-image"]
+	path = lxqt-rock5b-image
+	url = https://github.com/RebornOS-Developers/lxqt-rock5b-image.git
