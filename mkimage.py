@@ -249,11 +249,15 @@ def partition_rock5b(disk,fs,img_size):
         ]
     )
     subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
+    
     subprocess.run("dd if=" + config_dir + "/idbloader.img of=" + disk + " bs=512 seek=64",shell=True)
     subprocess.run("dd if=" + config_dir + "/u-boot.itb of=" + disk + " bs=512 seek=16384",shell=True)
+    if not os.path.exists(mnt_dir):
+        os.mkdir(mnt_dir)
     if fs == "ext4":
         subprocess.run("mkfs.ext4 -F -L ROOTFS " + disk + "p2",shell=True)
         subprocess.run("mount " + disk + "p2 " + mnt_dir,shell=True)
+        os.mkdir(mnt_dir + "/boot")   
     else:
         exit(1)
 
@@ -418,6 +422,7 @@ def main():
         logging.info("Partitioned rock5b successfully")
         if not os.path.exists(mnt_dir):
             os.mkdir(mnt_dir)
+        
         subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
         copyfiles(install_dir, mnt_dir,retainperms=True)
         with open(mnt_dir + "/boot/extlinux/extlinux.conf", "w") as f:
