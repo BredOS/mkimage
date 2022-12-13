@@ -249,8 +249,8 @@ def partition_rock5b(disk,fs,img_size):
         ]
     )
     subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
-    subprocess.run("dd if=" + work_dir + "/idbloader.img of=" + disk + " bs=512 seek=64",shell=True)
-    subprocess.run("dd if=" + work_dir + "/u-boot.itb of=" + disk + " bs=512 seek=16384",shell=True)
+    subprocess.run("dd if=" + config_dir + "/idbloader.img of=" + disk + " bs=512 seek=64",shell=True)
+    subprocess.run("dd if=" + config_dir + "/u-boot.itb of=" + disk + " bs=512 seek=16384",shell=True)
     if fs == "ext4":
         subprocess.run("mkfs.ext4 -F -L ROOTFS " + disk + "p2",shell=True)
         subprocess.run("mount " + disk + "p2 " + mnt_dir,shell=True)
