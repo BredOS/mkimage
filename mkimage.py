@@ -425,9 +425,10 @@ def main():
         
         subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
         copyfiles(install_dir, mnt_dir,retainperms=True)
+        if not os.path.exists(mnt_dir + "/boot/extlinux"):
+            os.mkdir(mnt_dir + "/boot/extlinux")
+            subprocess.run(["touch", mnt_dir + "/boot/extlinux/extlinux.conf"])
         with open(mnt_dir + "/boot/extlinux/extlinux.conf", "w") as f:
-            if not os.path.exists(mnt_dir + "/boot/extlinux"):
-                os.mkdir(mnt_dir + "/boot/extlinux")
             f.write(configtxt)
         subprocess.run(["umount", "-R", mnt_dir])
         if img_backend == "loop":
