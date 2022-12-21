@@ -422,7 +422,6 @@ def main():
         logging.info("Partitioned rock5b successfully")
         if not os.path.exists(mnt_dir):
             os.mkdir(mnt_dir)
-        
         subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
         copyfiles(install_dir, mnt_dir,retainperms=True)
         if not os.path.exists(mnt_dir + "/boot/extlinux"):
@@ -430,6 +429,18 @@ def main():
             subprocess.run(["touch", mnt_dir + "/boot/extlinux/extlinux.conf"])
         with open(mnt_dir + "/boot/extlinux/extlinux.conf", "w") as f:
             f.write(configtxt)
+            # add append root=PARTUUID=... + cmdline
+            root_uuid=get_partuuid(ldev+"p2")
+            f.write("    append root=PARTUUID="+root_uuid+" " + cmdline)
+        if fs == "btrfs":
+            with open(mnt_dir + "/etc/fstab", "a") as f:
+                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / btrfs subvol=/@,defaults,compress=zstd,discard=async,ssd 0 0\n")
+                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" /home btrfs subvol=/@home,defaults,discard=async,ssd 0 0\n")
+                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")   
+        elif fs == "ext4":
+            with open(mnt_dir + "/etc/fstab", "a") as f:
+                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / ext4 defaults 0 0\n")
+                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
         subprocess.run(["umount", "-R", mnt_dir])
         if img_backend == "loop":
             subprocess.run(["losetup", "-d", ldev])
