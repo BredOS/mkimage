@@ -1,4 +1,4 @@
-name: "Build RebornOS ARM for rpi"
+name: "Build RebornOS ARM for r58-mini"
 on:
   # push:
   #   branches:
@@ -21,9 +21,9 @@ jobs:
         run: |
           sudo rm -rf /tmp/work || true
           sudo rm -rf ./out || true
-      - name: Build RebornOS ARM for rpi
+      - name: Build RebornOS ARM for r58-mini
         run: |
-          sudo python ./mkimage.py -w /tmp/work/ -c ./lxqt-rpi-image/ -o ./out/
+          sudo python ./mkimage.py -w /tmp/work/ -c ./lxqt-r58-mini-image/ -o ./out/
           sudo chown -R $USER:$USER ./out/
       - name: Get image md5sum 
         id: md5sum
@@ -37,7 +37,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
-          repository: RebornOS-Developers/lxqt-rpi-image
+          repository: RebornOS-Developers/lxqt-r58-mini-image
           token: ${{ secrets.GH_TOKEN }}
           files: ./out/*.img.xz
           tag_name: ${{ steps.commit.outputs.hash }}
@@ -45,5 +45,5 @@ jobs:
           prerelease: true
           body: |
             md5sum: ${{ steps.md5sum.outputs.md5sum }}
-          name: RebornOS ARM rpi ${{ steps.commit.outputs.hash }}
+          name: RebornOS ARM r58-mini ${{ steps.commit.outputs.hash }}
         

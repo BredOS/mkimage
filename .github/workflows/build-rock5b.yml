@@ -37,11 +37,13 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
+          repository: RebornOS-Developers/lxqt-rock5b-image
+          token: ${{ secrets.GH_TOKEN }}
           files: ./out/*.img.xz
           tag_name: ${{ steps.commit.outputs.hash }}
           draft: true
           prerelease: true
           body: |
-            md5sum: ${{ steps.md5sum.outputs.md5sum }}          
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: RebornOS ARM ${{ steps.commit.outputs.hash }}
+            md5sum: ${{ steps.md5sum.outputs.md5sum }}
+          name: RebornOS ARM Rock5b ${{ steps.commit.outputs.hash }}
+        

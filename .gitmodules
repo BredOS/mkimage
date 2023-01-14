@@ -4,3 +4,9 @@
 [submodule "lxqt-rock5b-image"]
 	path = lxqt-rock5b-image
 	url = https://github.com/RebornOS-Developers/lxqt-rock5b-image.git
+[submodule "lxqt-r58-mini-image"]
+	path = lxqt-r58-mini-image
+	url = https://github.com/RebornOS-Developers/lxqt-r58-mini-image.git
+[submodule "lxqt-r58x-image"]
+	path = lxqt-r58x-image
+	url = https://github.com/RebornOS-Developers/lxqt-r58x-image.git
