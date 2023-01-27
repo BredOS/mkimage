@@ -25,10 +25,12 @@ jobs:
         run: |
           sudo python ./mkimage.py -w /tmp/work/ -c ./lxqt-rock5b-image/ -o ./out/
           sudo chown -R $USER:$USER ./out/
-      - name: Get image md5sum 
-        id: md5sum
+      - name: Get md5sum, sha256 and sha512 sums
+        id: sums
         run: |
           echo "::set-output name=md5sum::$(md5sum ./out/*.img.xz | awk '{print $1}')"
+          echo "::set-output name=sha256sum::$(sha256sum ./out/*.img.xz | awk '{print $1}')"
+          echo "::set-output name=sha512sum::$(sha512sum ./out/*.img.xz | awk '{print $1}')"
       - name: Get short commit hash
         id: commit
         run: |
@@ -44,6 +46,8 @@ jobs:
           draft: true
           prerelease: true
           body: |
-            md5sum: ${{ steps.md5sum.outputs.md5sum }}
+            md5: ${{ steps.sums.outputs.md5sum }}
+            sha256: ${{ steps.sums.outputs.sha256sum }}
+            sha512: ${{ steps.sums.outputs.sha512sum }}
           name: RebornOS ARM Rock5b ${{ steps.commit.outputs.hash }}
         
