@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 import pathlib
-from signal import signal, SIGINT
+from signal import SIGTERM, signal, SIGINT
 import subprocess
 import sys
 import time
@@ -81,7 +81,7 @@ def verify_config():
     else:
         logging.error("Filesystem not supported use ext4 or btrfs")
         exit(1)
-    if device == 'rpi' or device == 'rock5b' or device == 'generic':
+    if device == 'rpi' or device == 'rock5b' or device == 'generic' or device == 'vim4-sd':
         pass
     else:
         logging.error("Device not supported use rpi, rock5b or generic")
@@ -137,7 +137,7 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir):
     subprocess.run(
         [
             "pacstrap",
-            "-d", "-c",
+            "-c",
             "-C", pacman_conf, 
             "-G", install_dir
         ] + packages
@@ -208,10 +208,8 @@ def partition_rpi(disk,fs,img_size):
         ]
     )
     subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
-    try:
-        os.mkdir(work_dir + "/mnt")
-    except FileExistsError:
-        pass    
+    if not os.path.exists(mnt_dir):
+        os.mkdir(mnt_dir)
     p2 = disk+"p2 "
     if fs == "btrfs":
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2,shell=True)
@@ -261,6 +259,50 @@ def partition_rock5b(disk,fs,img_size):
     else:
         exit(1)
 
+def partition_vim4_sd(disk,fs,img_size):
+    table=[
+        ["Partition", "Start", "End","Size", "Filesystem"],
+        ["uboot", "0%", "16M", "16M", "NONE"],
+        ["boot", "16M", "150M", "134M", "fat32"],
+        ["root", "150M", "100%", str(int(img_size/1000)-150) + "M" , fs]]
+    table_pretty = prettytable.PrettyTable(table[0])
+    for row in table[1:]:
+        table_pretty.add_row(row)
+    logging.info("\n"+table_pretty.get_string(title=disk+" Size " + str(int(img_size/1000)) + "M"))
+    subprocess.run(
+        [
+            "parted",
+            "--script", disk,
+            "mklabel", "msdos",
+            "mkpart", "primary", "fat32", "16M", "150M",
+            "set", "1", "boot", "on",
+            "mkpart", "primary", fs, "150M", "100%"
+        ]
+    )
+    subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
+    if not os.path.exists(mnt_dir):
+        os.mkdir(mnt_dir)
+    p2 = disk+"p2 "
+    if fs == "ext4":
+        subprocess.run("mkfs.ext4 -F -L ROOTFS " + disk + "p2",shell=True)
+        subprocess.run("mount " + disk + "p2 " + mnt_dir,shell=True)
+        os.mkdir(mnt_dir + "/boot")
+    if fs == "btrfs":
+        subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2,shell=True)
+        subprocess.run("mount -t btrfs -o compress=zstd " + p2 + mnt_dir,shell=True)
+        subprocess.run("btrfs subvolume create " + mnt_dir + "/@",shell=True)
+        subprocess.run("btrfs subvolume create " + mnt_dir + "/@home",shell=True)
+        subprocess.run("umount " + p2 ,shell=True)
+        subprocess.run(["lsblk"])
+        subprocess.run("mount -t btrfs -o compress=zstd,subvol=@ " + p2 + mnt_dir,shell=True)
+        os.mkdir(mnt_dir + "/home")
+        subprocess.run("mount -t btrfs -o compress=zstd,subvol=@home " + p2 + mnt_dir + "/home",shell=True)
+    else:
+        logging.error("Filesystem not supported")
+        exit(1)
+    subprocess.run("dd if=" + config_dir + "/u-boot.bin.sd.bin.signed of=" + disk + " conv=fsync,notrunc bs=442 count=1",shell=True)
+    subprocess.run("dd if=" + config_dir + "/u-boot.bin.sd.bin.signed of=" + disk + " conv=fsync,notrunc bs=512 skip=1 seek=1",shell=True)
+
 def partition_rockpro(disk,fs,img_size):
     table=[
         ["Partition", "Start", "End","Size", "Filesystem"],
@@ -299,10 +341,8 @@ def partition_rockpro(disk,fs,img_size):
             "seek=16384", "conv=notrunc"
         ]
     )
-    try:
-        os.mkdir(work_dir + "/mnt")
-    except FileExistsError:
-        pass
+    if not os.path.exists(mnt_dir):
+        os.mkdir(mnt_dir)
     p1 = disk+"p1 "
     if fs == "btrfs":
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p1,shell=True)
@@ -317,14 +357,45 @@ def partition_rockpro(disk,fs,img_size):
         subprocess.run("mkfs.ext4 -F -L ROOTFS " + p1,shell=True)
         subprocess.run("mount " + p1 + mnt_dir,shell=True)
 
+def create_fstab(fs):
+    if fs == "btrfs":
+        with open(mnt_dir + "/etc/fstab", "a") as f:
+            f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / btrfs subvol=/@,defaults,compress=zstd,discard=async,ssd 0 0\n")
+            f.write("PARTUUID="+get_partuuid(ldev+"p2")+" /home btrfs subvol=/@home,defaults,discard=async,ssd 0 0\n")
+            f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")   
+    elif fs == "ext4":
+        with open(mnt_dir + "/etc/fstab", "a") as f:
+            f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / ext4 defaults 0 0\n")
+            f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
 
+def create_extlinux_conf():
+    if not os.path.exists(mnt_dir + "/boot/extlinux"):
+        os.mkdir(mnt_dir + "/boot/extlinux")
+        subprocess.run(["touch", mnt_dir + "/boot/extlinux/extlinux.conf"])
+    with open(mnt_dir + "/boot/extlinux/extlinux.conf", "w") as f:
+        f.write(configtxt)
+        # add append root=PARTUUID=... + cmdline
+        root_uuid=get_partuuid(ldev+"p2")
+        f.write("    append root=PARTUUID="+root_uuid+" " + cmdline)
+
+def cleanup():
+    logging.info("Cleaning up")
+    subprocess.run(["rm", "-rf", work_dir])
+
+def unmount():
+    logging.info("Unmounting!")
+    subprocess.run(["umount", "-R", mnt_dir])
+    if img_backend == "loop":
+        subprocess.run(["losetup", "-d", ldev])
+    elif img_backend == "qemu-nbd":
+        subprocess.run(["qemu-nbd", "-d", ldev])
 
 def compressimage(img_name):
     logging.info("Compressing "+img_name+".img")
     subprocess.run(
         [
             "xz",
-            "-k", "--extreme", "--best", "-T0","--verbose", "-f",
+            "-k", "-9", "-T0","--verbose", "-f",
             work_dir + '/' + img_name + '.img'
         ]
     )
@@ -336,6 +407,7 @@ def compressimage(img_name):
             out_dir + '/' + img_name + '.img.xz'
         ]
     )
+    subprocess.run(["chmod", "-R", "777", out_dir])
     logging.info("Compressed "+img_name+".img")
 
 def copyfiles(ot, to,retainperms=False):
@@ -390,24 +462,10 @@ def main():
             f.write("root=PARTUUID="+root_uuid+" " + cmdline)
         with open(work_dir + "/mnt/boot/config.txt", "a") as f:
             f.write(configtxt)
-        if fs == "btrfs":
-            with open(mnt_dir + "/etc/fstab", "a") as f:
-                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / btrfs subvol=/@,defaults,compress=zstd,discard=async,ssd 0 0\n")
-                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" /home btrfs subvol=/@home,defaults,discard=async,ssd 0 0\n")
-                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
-        else:
-            with open(mnt_dir + "/etc/fstab", "a") as f:
-                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / ext4 defaults 0 0\n")
-                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
-        
-        subprocess.run(["umount", "-R", mnt_dir])
-        if img_backend == "loop":
-            subprocess.run(["losetup", "-d", ldev])
-        elif img_backend == "qemu-nbd":
-            subprocess.run(["qemu-nbd", "-d", ldev])
+        create_fstab(fs)
+        unmount()
         compressimage(img_name)
-        subprocess.run(["chmod", "-R", "777", out_dir])
-        subprocess.run(["rm", "-rf", work_dir])
+        cleanup()
     elif device == "rock5b":
         copyfiles(config_dir+ "/alarmimg",install_dir)
         pacstrap_packages(pacman_conf, packages_file, install_dir)
@@ -424,32 +482,33 @@ def main():
             os.mkdir(mnt_dir)
         subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
         copyfiles(install_dir, mnt_dir,retainperms=True)
-        if not os.path.exists(mnt_dir + "/boot/extlinux"):
-            os.mkdir(mnt_dir + "/boot/extlinux")
-            subprocess.run(["touch", mnt_dir + "/boot/extlinux/extlinux.conf"])
-        with open(mnt_dir + "/boot/extlinux/extlinux.conf", "w") as f:
-            f.write(configtxt)
-            # add append root=PARTUUID=... + cmdline
-            root_uuid=get_partuuid(ldev+"p2")
-            f.write("    append root=PARTUUID="+root_uuid+" " + cmdline)
-        if fs == "btrfs":
-            with open(mnt_dir + "/etc/fstab", "a") as f:
-                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / btrfs subvol=/@,defaults,compress=zstd,discard=async,ssd 0 0\n")
-                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" /home btrfs subvol=/@home,defaults,discard=async,ssd 0 0\n")
-                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")   
-        elif fs == "ext4":
-            with open(mnt_dir + "/etc/fstab", "a") as f:
-                f.write("PARTUUID="+get_partuuid(ldev+"p2")+" / ext4 defaults 0 0\n")
-                f.write("PARTUUID="+get_partuuid(ldev+"p1")+" /boot vfat defaults 0 0\n")
-        subprocess.run(["umount", "-R", mnt_dir])
-        if img_backend == "loop":
-            subprocess.run(["losetup", "-d", ldev])
-        elif img_backend == "qemu-nbd":
-            subprocess.run(["qemu-nbd", "-d", ldev])
+        create_extlinux_conf()
+        create_fstab(fs)
+        unmount()
         compressimage(img_name)
-        subprocess.run(["chmod", "-R", "777", out_dir])
-        subprocess.run(["rm", "-rf", work_dir])
-        
+        cleanup()
+    elif device == "vim4-sd":
+        copyfiles(config_dir+ "/alarmimg",install_dir)
+        pacstrap_packages(pacman_conf, packages_file, install_dir)
+        subprocess.run(' '.join(["rm", "-rf",
+            install_dir + "/etc/machine-id",
+            install_dir + "/var/lib/dbus/machine-id"]),shell=True)
+        subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
+        logging.info("Partitioning vim4")
+        rootfs_size=int(subprocess.check_output(["du", "-s", install_dir]).split()[0].decode("utf-8"))
+        img_size,ldev = makeimg(rootfs_size,fs,img_name,img_backend)
+        partition_vim4_sd(ldev, fs, img_size)
+        logging.info("Partitioned vim4 successfully")
+        if not os.path.exists(mnt_dir + "/boot"):
+            os.mkdir(mnt_dir + "/boot")
+        subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
+        copyfiles(install_dir, mnt_dir,retainperms=True)
+        create_extlinux_conf()
+        create_fstab(fs)
+        unmount()
+        compressimage(img_name)
+        # cleanup()
+
 
 def handler(signal_received, frame):
     # Handle any cleanup here
@@ -479,6 +538,14 @@ if __name__ == "__main__":
         subprocess.run(["modprobe","nbd"])
         ldev = "/dev/nbd2"
     signal(SIGINT, handler)
+    signal(SIGTERM, handler)
+    # get start time
+    start_time = time.time()
     main()
+    # get end time
+    end_time = time.time()
+    # calculate total time taken convert to human readable format
+    total_time = time.strftime("%H:%M:%S", time.gmtime(end_time - start_time))
+    logging.info("Total time taken: " + total_time)
 
         
