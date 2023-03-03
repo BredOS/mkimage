@@ -395,7 +395,8 @@ def compressimage(img_name):
     subprocess.run(
         [
             "xz",
-            "-k", "-9", "-T0","--verbose", "-f",
+            "-k", "-9", "-T0",
+            "--verbose", "-f", '-M', '65%',
             work_dir + '/' + img_name + '.img'
         ]
     )
