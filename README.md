@@ -7,6 +7,7 @@ This project is a Python script that automates the process of creating images fo
 - Orange Pi 5 (using Rock 5 board cfg)
 - R58S (using Rock 5 board cfg)
 - R58X (using Rock 5 board cfg)
+- R58X-4G (using Rock 5 board cfg)
 
 # Requirements
 
