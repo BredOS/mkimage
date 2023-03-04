@@ -37,6 +37,8 @@ Where:
     -w: the working directory to use
     -o: the output directory for the resulting image
     -c: the board configuration file to use
+    
+# **WARNING:** If your system has less than 16 GB of RAM, it is recommended to use a different directory for the working directory, as using `/tmp/work` can cause performance issues due to the limited space in the `/tmp` directory.
 
 For example, to create an image for the Rock 5 board, using the lxqt-rock5b-image configuration, with a working directory of /tmp/work and an output directory of ./output, you would run:
 
@@ -54,4 +56,4 @@ If you want to create an image for a different SBC, you will need to create a ne
 If you find a bug or have a suggestion for improving this project, feel free to open an issue or submit a pull request. All contributions are welcome!
 License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the GPL 2.0 License. See the LICENSE file for details.
