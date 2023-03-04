@@ -34,9 +34,9 @@ To create an image for your chosen SBC, run the mkimage.py script with the appro
 ```
 
 Where:
-    -w: the working directory to use
-    -o: the output directory for the resulting image
-    -c: the board configuration file to use
+- `-w`: the working directory to use
+- `-o`: the output directory for the resulting image
+- `-c`: the board configuration file to use
     
 ## **WARNING:** If your system has less than 16 GB of RAM, it is recommended to use a different directory for the working directory, as using `/tmp/work` can cause performance issues due to the limited space in the `/tmp` directory.
 
