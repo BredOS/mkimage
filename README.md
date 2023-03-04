@@ -51,9 +51,19 @@ For example, to create an image for the Rock 5 board, using the lxqt-rock5b-imag
 Board configuration files contain the settings necessary to build an image for a specific SBC. These files are located in the configs directory of the project.
 
 If you want to create an image for a different SBC, you will need to create a new configuration file for that board. You can use an existing configuration file as a starting point.
+
+- alarmimg/: the directory containing the basic system files for the image
+- fixperms.sh: a shell script for fixing file permissions on the system files
+- idbloader.img and u-boot.itb: files needed for U-Boot on Rock 5 boards
+- packages.aarch64: a list of packages to be installed on the image
+- pacman.conf.aarch64: the configuration file used to create the image itself
+- profiledef: a file containing basic information about the image, such as the version number, device, architecture, file system type, image name, image type, backend, and cmdline
+
+
 # Contributing
 
 If you find a bug or have a suggestion for improving this project, feel free to open an issue or submit a pull request. All contributions are welcome!
-License
+
+# License
 
 This project is licensed under the GPL 2.0 License. See the LICENSE file for details.
