@@ -13,3 +13,9 @@
 [submodule "lxqt-opi5-image"]
 	path = lxqt-opi5-image
 	url = https://github.com/RebornOS-Developers/lxqt-opi5-image.git
+[submodule "lxqt-r58x-4g-image"]
+	path = lxqt-r58x-4g-image
+	url = https://github.com/RebornOS-Developers/lxqt-r58x-4g-image.git
+[submodule "lxqt-r58s-image"]
+	path = lxqt-r58s-image
+	url = https://github.com/RebornOS-Developers/lxqt-r58s-image.git
