@@ -66,4 +66,4 @@ If you find a bug or have a suggestion for improving this project, feel free to 
 
 # License
 
-This project is licensed under the GPL 2.0 License. See the LICENSE file for details.
+This project is licensed under the GPL 3.0 License. See the LICENSE file for details.
