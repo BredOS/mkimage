@@ -4,7 +4,7 @@ This project is a Python script that automates the process of creating images fo
 
 - VIM 4
 - Rock 5
-- Orange Pi 5 (using Rock 5 as device)
+- Orange Pi 5 (using Rock 5 board cfg)
 - R58S (using Rock 5 board cfg)
 - R58X (using Rock 5 board cfg)
 
