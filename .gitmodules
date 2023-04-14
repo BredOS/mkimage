@@ -19,3 +19,9 @@
 [submodule "lxqt-r58s-image"]
 	path = lxqt-r58s-image
 	url = https://github.com/RebornOS-Developers/lxqt-r58s-image.git
+[submodule "lxqt-cpi4-image"]
+	path = lxqt-cpi4-image
+	url = https://github.com/RebornOS-Developers/lxqt-cpi4-image.git
+[submodule "lxqt-rock5a-image"]
+	path = lxqt-rock5a-image
+	url = https://github.com/RebornOS-Developers/lxqt-rock5a-image.git

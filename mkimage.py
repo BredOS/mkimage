@@ -225,6 +225,42 @@ def partition_rpi(disk,fs,img_size):
         subprocess.run("mount " + p2 + mnt_dir,shell=True)
     os.mkdir(mnt_dir + "/boot")
 
+def partition_cpi4(disk,fs,img_size):
+    table=[
+        ["Partition", "Start", "End","Size", "Filesystem"],
+        ["boot", "0%", "150M", "150M", "fat32"],
+        ["root", "150M", "100%", str(int(img_size/1000)-150) + "M" , fs]]
+    table_pretty = prettytable.PrettyTable(table[0])
+    for row in table[1:]:
+        table_pretty.add_row(row)
+    logging.info("\n"+table_pretty.get_string(title=disk+" Size " + str(int(img_size/1000)) + "M"))
+    subprocess.run(
+        [
+            "parted",
+            "--script", disk,
+            "mklabel", "msdos",
+            "mkpart", "primary", "fat32", "0%", "150M",
+            "mkpart", "primary", fs, "150M", "100%"
+        ]
+    )
+    subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
+    if not os.path.exists(mnt_dir):
+        os.mkdir(mnt_dir)
+    p2 = disk+"p2 "
+    if fs == "btrfs":
+        subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2,shell=True)
+        subprocess.run("mount -t btrfs -o compress=zstd " + p2 + mnt_dir,shell=True)
+        subprocess.run("btrfs subvolume create " + mnt_dir + "/@",shell=True)
+        subprocess.run("btrfs subvolume create " + mnt_dir + "/@home",shell=True)
+        subprocess.run("umount " + p2 ,shell=True)
+        subprocess.run("mount -t btrfs -o compress=zstd,subvol=@ " + p2 + mnt_dir,shell=True)
+        os.mkdir(mnt_dir + "/home")
+        subprocess.run("mount -t btrfs -o compress=zstd,subvol=@home " + p2 + mnt_dir + "/home",shell=True)
+    if fs == "ext4":
+        subprocess.run("mkfs.ext4 -F -L ROOTFS " + p2,shell=True)
+        subprocess.run("mount " + p2 + mnt_dir,shell=True)
+    os.mkdir(mnt_dir + "/boot")
+
 def partition_rock5b(disk,fs,img_size):
     table=[
         ["Partition", "Start", "End","Size", "Filesystem"],
@@ -508,7 +544,28 @@ def main():
         create_fstab(fs)
         unmount()
         compressimage(img_name)
-        # cleanup()
+        cleanup()
+    elif device == "cpi4":
+        copyfiles(config_dir+ "/alarmimg",install_dir)
+        pacstrap_packages(pacman_conf, packages_file, install_dir)
+        subprocess.run(' '.join(["rm", "-rf",
+            install_dir + "/etc/machine-id",
+            install_dir + "/var/lib/dbus/machine-id"]),shell=True)
+        subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
+        logging.info("Partitioning cpi4")
+        rootfs_size=int(subprocess.check_output(["du", "-s", install_dir]).split()[0].decode("utf-8"))
+        img_size,ldev = makeimg(rootfs_size,fs,img_name,img_backend)
+        partition_cpi4(ldev, fs, img_size)
+        logging.info("Partitioned cpi4 successfully")
+        if not os.path.exists(mnt_dir):
+            os.mkdir(mnt_dir)
+        subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
+        copyfiles(install_dir, mnt_dir,retainperms=True)
+        create_extlinux_conf()
+        create_fstab(fs)
+        unmount()
+        compressimage(img_name)
+        cleanup()
 
 
 def handler(signal_received, frame):
