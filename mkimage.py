@@ -145,6 +145,10 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir):
     logging.info("Pacstrap complete")
 
 
+def createbtrfssubvol(subvol):
+    subprocess.run("btrfs subvolume create " + mnt_dir + "/" + subvol ,shell=True)
+    # to be finished
+
 def makeimg(size,fs,img_name,backend):
     format = "raw"
     image_ext = ".img"
