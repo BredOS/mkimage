@@ -81,10 +81,11 @@ def verify_config():
     else:
         logging.error("Filesystem not supported use ext4 or btrfs")
         exit(1)
-    if device == 'rpi' or device == 'rock5b' or device == 'generic' or device == 'vim4-sd' or device == 'cpi4':
+    #== 'rpi' or device == 'rock5b' or device == 'generic' or device == 'vim4-sd' or device == 'cpi4' or device
+    if device in ['rpi', 'rock5b', 'cpi4', 'generic', 'vim4-sd', 'edge2']:
         pass
     else:
-        logging.error("Device not supported use rpi, rock5b, cpi4 or generic")
+        logging.error("Device not supported use rpi, rock5b, cpi4, edge2 or generic")
         exit(1)
     if not os.path.isfile(packages_file):
         logging.error("packages file doesnt exist create the file packages." + arch)
@@ -343,59 +344,50 @@ def partition_vim4_sd(disk,fs,img_size):
     subprocess.run("dd if=" + config_dir + "/u-boot.bin.sd.bin.signed of=" + disk + " conv=fsync,notrunc bs=442 count=1",shell=True)
     subprocess.run("dd if=" + config_dir + "/u-boot.bin.sd.bin.signed of=" + disk + " conv=fsync,notrunc bs=512 skip=1 seek=1",shell=True)
 
-def partition_rockpro(disk,fs,img_size):
+def partition_edge2(disk,fs,img_size):
     table=[
         ["Partition", "Start", "End","Size", "Filesystem"],
-        ["uboot", "0%", "32M", "32M", "None"],
-        ["root", "32M", "100%", str(int(img_size/1000)-32) + "M" , fs]]
+        # ["uboot", "0%", "16M", "16M", "NONE"],
+        ["boot", "0%", "150M", "150", "fat32"],
+        ["root", "150M", "100%", str(int(img_size/1000)-150) + "M" , fs]]
     table_pretty = prettytable.PrettyTable(table[0])
     for row in table[1:]:
         table_pretty.add_row(row)
     logging.info("\n"+table_pretty.get_string(title=disk+" Size " + str(int(img_size/1000)) + "M"))
-    input("Press Enter to continue...")
-    # logging.info(table_pretty.get_string(title=disk))
+    # subprocess.run(
+    #     [
+    #         "parted",
+    #         "--script", disk,
+    #         "mklabel", "gpt",
+    #         "mkpart", "primary", "fat32", "16M", "150M",
+    #         "set", "1", "boot", "on",
+    #         "set", "1", "esp", "on",
+    #         "mkpart", "primary", fs, "150M", "100%"
+    #     ]
+    # )
     subprocess.run(
         [
-            "parted", "-s",
-            disk, "mklabel", "msdos",
-            disk, "mkpart", "primary", fs, "32M", "100%"
+            "parted",
+            "--script", disk,
+            "mklabel", "gpt",
+            "mkpart", "primary", "fat32", "0%", "150M",
+            "set", "1", "boot", "on",
+            "set", "1", "esp", "on",
+            "mkpart", "primary", fs, "150M", "100%"
         ]
     )
-    os.chdir(work_dir)
-    subprocess.run(["wget", "http://os.archlinuxarm.org/os/rockchip/boot/rock64/rksd_loader.img", "http://os.archlinuxarm.org/os/rockchip/boot/rock64/rksd_loader.img"])
-    # dd if=rksd_loader.img of=/dev/sdX seek=64 conv=notrunc
-    subprocess.run(
-        [
-            "dd",
-            "if=rksd_loader.img",
-            "of=" + disk,
-            "seek=64", "conv=notrunc"
-        ]
-    )
-    #dd if=u-boot.itb of=/dev/sdX seek=16384 conv=notrunc
-    subprocess.run(
-        [
-            "dd",
-            "if=u-boot.itb",
-            "of=" + disk,
-            "seek=16384", "conv=notrunc"
-        ]
-    )
+    subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
+    # subprocess.run("dd if=" + config_dir + "/idblock.bin of=" + disk + " seek=64 conv=notrunc",shell=True)
+    # subprocess.run("dd if=" + config_dir + "/uboot.img of=" + disk + "  seek=16384 conv=notrunc",shell=True)
     if not os.path.exists(mnt_dir):
         os.mkdir(mnt_dir)
-    p1 = disk+"p1 "
-    if fs == "btrfs":
-        subprocess.run("mkfs.btrfs -f -L ROOTFS " + p1,shell=True)
-        subprocess.run("mount -t btrfs -o compress=zstd " + p1 + mnt_dir,shell=True)
-        subprocess.run("btrfs subvolume create " + mnt_dir + "/@",shell=True)
-        subprocess.run("btrfs subvolume create " + mnt_dir + "/@home",shell=True)
-        subprocess.run("umount " + p1 ,shell=True)
-        subprocess.run("mount -t btrfs -o compress=zstd,subvol=@ " + p1 + mnt_dir,shell=True)
-        os.mkdir(mnt_dir + "/home")
-        subprocess.run("mount -t btrfs -o compress=zstd,subvol=@home " + p1 + mnt_dir + "/home",shell=True)
     if fs == "ext4":
-        subprocess.run("mkfs.ext4 -F -L ROOTFS " + p1,shell=True)
-        subprocess.run("mount " + p1 + mnt_dir,shell=True)
+        subprocess.run("mkfs.ext4 -F -L ROOTFS " + disk + "p2",shell=True)
+        subprocess.run("mount " + disk + "p2 " + mnt_dir,shell=True)
+        os.mkdir(mnt_dir + "/boot")   
+    else:
+        exit(1)
+
 
 def create_fstab(fs):
     if fs == "btrfs":
@@ -568,6 +560,27 @@ def main():
         create_extlinux_conf()
         create_fstab(fs)
         unmount()
+        compressimage(img_name)
+        cleanup()
+    elif device == "edge2":
+        # copyfiles(config_dir+ "/alarmimg",install_dir)
+        # pacstrap_packages(pacman_conf, packages_file, install_dir)
+        # subprocess.run(' '.join(["rm", "-rf",
+        #     install_dir + "/etc/machine-id",
+        #     install_dir + "/var/lib/dbus/machine-id"]),shell=True)
+        # subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
+        # logging.info("Partitioning edge 2")
+        # rootfs_size=int(subprocess.check_output(["du", "-s", install_dir]).split()[0].decode("utf-8"))
+        # img_size,ldev = makeimg(rootfs_size,fs,img_name,img_backend)
+        # partition_edge2(ldev, fs, img_size)
+        # logging.info("Partitioned edge 2 successfully")
+        # if not os.path.exists(mnt_dir):
+        #     os.mkdir(mnt_dir)
+        # subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
+        # copyfiles(install_dir, mnt_dir,retainperms=True)
+        # create_extlinux_conf()
+        # create_fstab(fs)
+        # unmount()
         compressimage(img_name)
         cleanup()
 
