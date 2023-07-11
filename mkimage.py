@@ -20,6 +20,12 @@ parser.add_argument(
     required=True
     )
 parser.add_argument(
+    '-x',
+    '--no-compress',
+    help='Do not compress into a .xz',
+    action='store_true'
+    )
+parser.add_argument(
     '-c',
     '--config_dir',
     help='Folder with config files',
@@ -551,8 +557,10 @@ def main():
             f.write(configtxt)
         create_fstab(fs)
         unmount()
-        compressimage(img_name)
-        #copyimage(img_name)
+        if args.no_compress:
+            copyimage(img_name)
+        else:
+            compressimage(img_name)
         cleanup()
     elif device == "rock5b":
         copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -573,8 +581,10 @@ def main():
         create_extlinux_conf()
         create_fstab(fs)
         unmount()
-        compressimage(img_name)
-        #copyimage(img_name)
+        if args.no_compress:
+            copyimage(img_name)
+        else:
+            compressimage(img_name)
         cleanup()
     elif device == "rock4c-plus":
         copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -596,8 +606,10 @@ def main():
         create_extlinux_conf()
         create_fstab(fs)
         unmount()
-        compressimage(img_name)
-        #copyimage(img_name)
+        if args.no_compress:
+            copyimage(img_name)
+        else:
+            compressimage(img_name)
         cleanup()
     elif device == "vim4-sd":
         copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -618,8 +630,10 @@ def main():
         create_extlinux_conf()
         create_fstab(fs)
         unmount()
-        compressimage(img_name)
-        #copyimage(img_name)
+        if args.no_compress:
+            copyimage(img_name)
+        else:
+            compressimage(img_name)
         cleanup()
     elif device == "cpi4":
         copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -640,8 +654,10 @@ def main():
         create_extlinux_conf()
         create_fstab(fs)
         unmount()
-        compressimage(img_name)
-        #copyimage(img_name)
+        if args.no_compress:
+            copyimage(img_name)
+        else:
+            compressimage(img_name)
         cleanup()
     elif device == "edge2":
         # copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -662,8 +678,10 @@ def main():
         # create_extlinux_conf()
         # create_fstab(fs)
         # unmount()
-        compressimage(img_name)
-        #copyimage(img_name)
+        if args.no_compress:
+            copyimage(img_name)
+        else:
+            compressimage(img_name)
         cleanup()
 
 
