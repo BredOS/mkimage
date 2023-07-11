@@ -82,7 +82,7 @@ def verify_config():
         logging.error("Filesystem not supported use ext4 or btrfs")
         exit(1)
     #== 'rpi' or device == 'rock5b' or device == 'generic' or device == 'vim4-sd' or device == 'cpi4' or device
-    if device in ['rpi', 'rock5b', 'cpi4', 'generic', 'vim4-sd', 'edge2']:
+    if device in ['rpi', 'rock5b', 'cpi4', 'generic', 'vim4-sd', 'edge2', 'rock4c-plus']:
         pass
     else:
         logging.error("Device not supported use rpi, rock5b, cpi4, edge2 or generic")
@@ -300,6 +300,42 @@ def partition_rock5b(disk,fs,img_size):
     else:
         exit(1)
 
+def partition_rock4c_plus(disk,fs,img_size):
+    table=[
+        ["Partition", "Start", "End","Size", "Filesystem"],
+        ["uboot", "0%", "64M", "64M", "NONE"],
+        ["boot", "64M", "200M", "136M", "fat32"],
+        ["root", "200M", "100%", str(int(img_size/1000)-150) + "M" , fs]]
+    table_pretty = prettytable.PrettyTable(table[0])
+    for row in table[1:]:
+        table_pretty.add_row(row)
+    logging.info("\n"+table_pretty.get_string(title=disk+" Size " + str(int(img_size/1000)) + "M"))
+    subprocess.run(
+        [
+            "parted",
+            "--align", "optimal",
+            "--script", disk,
+            "mklabel", "gpt",
+            "mkpart", "primary", "fat32", "64MiB", "200MiB",
+            "set", "1", "boot", "on",
+            "set", "1", "esp", "on",
+            "mkpart", "primary", fs, "200MiB", "100%"
+        ]
+    )
+    subprocess.run(["mkfs.fat", "-F32", "-n", "BOOT", disk + "p1"])
+
+    subprocess.run("dd if=" + config_dir + "/idbloader.img of=" + disk + " bs=512 seek=64",shell=True)
+    subprocess.run("dd if=" + config_dir + "/uboot.img of=" + disk + " bs=512 seek=16384",shell=True)
+    subprocess.run("dd if=" + config_dir + "/trust.img of=" + disk + " bs=512 seek=24576",shell=True)
+    if not os.path.exists(mnt_dir):
+        os.mkdir(mnt_dir)
+    if fs == "ext4":
+        subprocess.run("mkfs.ext4 -F -L ROOTFS " + disk + "p2",shell=True)
+        subprocess.run("mount " + disk + "p2 " + mnt_dir,shell=True)
+        os.mkdir(mnt_dir + "/boot")
+    else:
+        exit(1)
+
 def partition_vim4_sd(disk,fs,img_size):
     table=[
         ["Partition", "Start", "End","Size", "Filesystem"],
@@ -443,6 +479,20 @@ def compressimage(img_name):
     subprocess.run(["chmod", "-R", "777", out_dir])
     logging.info("Compressed "+img_name+".img")
 
+def copyimage(img_name):
+    logging.info("Copying "+img_name+".img")
+    # Move the image to the correct output directory
+    subprocess.run(
+        [
+            "cp",
+            work_dir + '/' + img_name + '.img',
+            out_dir + '/' + img_name + '.img'
+        ]
+    )
+    subprocess.run(["chmod", "-R", "777", out_dir])
+    logging.info("Copied "+img_name+".img")
+
+
 def copyfiles(ot, to,retainperms=False):
     logging.info("Copying files to " + to)
     if retainperms:
@@ -461,6 +511,10 @@ def main():
     ])   
     logging.info("Initializing mkimage")
     build_date = time.strftime("%Y-%m-%d")
+    if install_dir is None:
+        # In case for some weird reason it was none, it could break the builder machine.
+        logging.info("install_dir is None!! ABORT!")
+        exit(1)
     pacman_conf = config_dir + "/pacman.conf."+arch
     logging.info("             Architecture:   "+arch)
     logging.info("                  Edition:   "+edition)
@@ -498,6 +552,7 @@ def main():
         create_fstab(fs)
         unmount()
         compressimage(img_name)
+        #copyimage(img_name)
         cleanup()
     elif device == "rock5b":
         copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -519,6 +574,30 @@ def main():
         create_fstab(fs)
         unmount()
         compressimage(img_name)
+        #copyimage(img_name)
+        cleanup()
+    elif device == "rock4c-plus":
+        copyfiles(config_dir+ "/alarmimg",install_dir)
+        subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
+        pacstrap_packages(pacman_conf, packages_file, install_dir)
+        subprocess.run(' '.join(["rm", "-rf",
+            install_dir + "/etc/machine-id",
+            install_dir + "/var/lib/dbus/machine-id"]),shell=True)
+        subprocess.run(["sh", config_dir + "/fixperms.sh", install_dir])
+        logging.info("Partitioning rock4c-plus")
+        rootfs_size=int(subprocess.check_output(["du", "-s", install_dir]).split()[0].decode("utf-8"))
+        img_size,ldev = makeimg(rootfs_size,fs,img_name,img_backend)
+        partition_rock4c_plus(ldev, fs, img_size)
+        logging.info("Partitioned rock4c-plus successfully")
+        if not os.path.exists(mnt_dir):
+            os.mkdir(mnt_dir)
+        subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
+        copyfiles(install_dir, mnt_dir,retainperms=True)
+        create_extlinux_conf()
+        create_fstab(fs)
+        unmount()
+        compressimage(img_name)
+        #copyimage(img_name)
         cleanup()
     elif device == "vim4-sd":
         copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -540,6 +619,7 @@ def main():
         create_fstab(fs)
         unmount()
         compressimage(img_name)
+        #copyimage(img_name)
         cleanup()
     elif device == "cpi4":
         copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -561,6 +641,7 @@ def main():
         create_fstab(fs)
         unmount()
         compressimage(img_name)
+        #copyimage(img_name)
         cleanup()
     elif device == "edge2":
         # copyfiles(config_dir+ "/alarmimg",install_dir)
@@ -582,6 +663,7 @@ def main():
         # create_fstab(fs)
         # unmount()
         compressimage(img_name)
+        #copyimage(img_name)
         cleanup()
 
 
