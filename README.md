@@ -1,9 +1,10 @@
-# RebornOS ARM Image builder
+# BredOS Image builder
 
 This project is a Python script that automates the process of creating images for various Arm SBCs (Single Board Computers) using a board configuration file. The script currently supports the following SBCs:
 
 - VIM 4
 - Rock 5
+- Rock 4C+
 - Orange Pi 5 (using Rock 5 board cfg)
 - R58S (using Rock 5 board cfg)
 - R58X (using Rock 5 board cfg)
@@ -60,6 +61,7 @@ If you want to create an image for a different SBC, you will need to create a ne
 - pacman.conf.aarch64: the configuration file used to create the image itself
 - profiledef: a file containing basic information about the image, such as the version number, device, architecture, file system type, image name, image type, backend, and cmdline
 
+Some boards like the Rock 4C+ have more files, containing patches, or extra firmware.
 
 # Contributing
 
