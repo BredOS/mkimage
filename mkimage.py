@@ -132,20 +132,31 @@ def get_partuuid(device):
         .split('"')[-2]
     )
 
+def get_uuid(device):
+    return (
+        subprocess.check_output(["blkid", device])
+        .decode("utf-8")
+        .split(" ")[2]
+        .split('"')[-2]
+    )
+
+def get_fat_uuid(device): # I could do a smort one, but cmon, it's fine.
+    return (
+        subprocess.check_output(["blkid", device])
+        .decode("utf-8")
+        .split(" ")[3]
+        .split('"')[-2]
+    )
+
 
 def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
-    with open(packages_file, "r") as f:
+    with open(packages_file) as f:
         packages = map(lambda package: package.strip(), f.readlines())
         packages = list(filter(lambda package: not package.startswith("#"), packages))
     logging.info("Install dir is:" + install_dir)
     logging.info("Running pacstrap")
     subprocess.run(["pacstrap", "-c", "-C", pacman_conf, "-G", install_dir] + packages)
     logging.info("Pacstrap complete")
-
-
-def createbtrfssubvol(subvol):
-    subprocess.run("btrfs subvolume create " + mnt_dir + "/" + subvol, shell=True)
-    # to be finished
 
 
 def makeimg(size, fs, img_name, backend):
@@ -267,8 +278,8 @@ def partition(disk, fs, img_size, partition_table):
         p2 = disk + "p2 "
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2, shell=True)
         subprocess.run("mount -t btrfs -o compress=zstd " + p2 + mnt_dir, shell=True)
-        subprocess.run("btrfs subvolume create " + mnt_dir + "/@", shell=True)
-        subprocess.run("btrfs subvolume create " + mnt_dir + "/@home", shell=True)
+        for i in ["/@", "/@home", "/@log", "/@pkg", "/@.snapshots"]:
+            subprocess.run("btrfs su cr " + mnt_dir + i, shell=True)
         subprocess.run("umount " + p2, shell=True)
         subprocess.run(
             "mount -t btrfs -o compress=zstd,subvol=@ " + p2 + mnt_dir, shell=True
@@ -283,26 +294,69 @@ def partition(disk, fs, img_size, partition_table):
     logging.info("Partitioned successfully")
 
 def create_fstab(fs) -> None:
-    if fs == "btrfs":
-        with open(mnt_dir + "/etc/fstab", "a") as f:
-            f.write(
-                "PARTUUID="
-                + get_partuuid(ldev + "p2")
-                + " / btrfs subvol=/@,defaults,compress=zstd,discard=async,ssd 0 0\n"
-            )
-            f.write(
-                "PARTUUID="
-                + get_partuuid(ldev + "p2")
-                + " /home btrfs subvol=/@home,defaults,discard=async,ssd 0 0\n"
-            )
-            f.write(
-                "PARTUUID=" + get_partuuid(ldev + "p1") + " /boot vfat defaults 0 0\n"
-            )
-    elif fs == "ext4":
+    if fs == "ext4":
         with open(mnt_dir + "/etc/fstab", "a") as f:
             f.write("PARTUUID=" + get_partuuid(ldev + "p2") + " / ext4 defaults 0 0\n")
             f.write(
-                "PARTUUID=" + get_partuuid(ldev + "p1") + " /boot vfat defaults 0 0\n"
+                "PARTUUID="
+                + get_partuuid(ldev + "p1")
+                + " /boot"
+                + "vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,"
+                + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
+            )
+    else:
+        with open(mnt_dir + "/etc/fstab", "a") as f:
+            f.write(
+                "UUID="
+                + get_fat_uuid(ldev + "p1")
+                + 28 * " "
+                + "/boot"
+                + 17 * " "
+                + "vfat  rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,"
+                + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
+            )
+            f.write(
+                "UUID="
+                + get_uuid(ldev + "p2")
+                + " /"
+                + 21 * " "
+                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/@"
+                + 35 * " "
+                + "0 0\n"
+            )
+            f.write(
+                "UUID="
+                + get_uuid(ldev + "p2")
+                + " /.snapshots"
+                + 11 * " "
+                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=260,subvol=/@.snapshots"
+                + 25 * " "
+                + "0 0\n"
+            )
+            f.write(
+                "UUID="
+                + get_uuid(ldev + "p2")
+                + " /home"
+                + 17 * " "
+                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home"
+                + 31 * " "
+                + "0 0\n"
+            )
+            f.write(
+                "UUID="
+                + get_uuid(ldev + "p2")
+                + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=259,subvol=/@pkg"
+                + 32 * " "
+                + "0 0\n"
+            )
+            f.write(
+                "UUID="
+                + get_uuid(ldev + "p2")
+                + " /var/log"
+                + 14 * " "
+                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=258,subvol=/@log"
+                + 32 * " "
+                + "0 0\n"
             )
 
 
