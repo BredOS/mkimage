@@ -62,6 +62,7 @@ def verify_config():
     cfg["img_name"] = profiledef.img_name
     cfg["img_type"] = profiledef.img_type
     cfg["img_version"] = profiledef.img_version
+    cfg["perms"] = profiledef.perms
     try:
         cfg["partition_table"] = profiledef.partition_table
     except AttributeError:
@@ -165,32 +166,18 @@ def realpath(item):
 
 def fixperms(target):
     realtarget = realpath(target)
-    permx = {
-        "/etc/": ["0", "0", "755"],
-        "/usr/bin/resizefs": ["0", "0", "755"],
-        "/usr/bin/zswap-arm-ctrl": ["0", "0", "755"],
-        "/usr/bin/oemcleanup": ["0", "0", "755"],
-        "/etc/polkit-1/rules.d": ["0", "0", "750"],
-        "/etc/sudoers.d": ["0", "0", "750"],
-        "/usr/lib": ["0", "0", "755"],
-        "/usr/bin": ["0", "0", "755"],
-        "/usr": ["0", "0", "755"],
-        "/usr/bin/remove-calamares": ["0", "0", "755"],
-        "/home/bred/": ["1001", "1001", "750"],
-        "/home": ["0", "0", "755"],
-    }
-    for i in permx.keys():
+    for i in cfg["perms"].keys():
         if realpath(realtarget + i) != realtarget + (i if not i[-1] == "/" else i[:-1]):
             raise OSError("Out of bounds permission fix!")
         if i[-1] == "/":
             subprocess.run(
-                ["chown", "-Rh", "--", permx[i][0] + ":" + permx[i][1], realtarget + i]
+                ["chown", "-Rh", "--", cfg["perms"][i][0] + ":" + cfg["perms"][i][1], realtarget + i]
             )
         else:
             subprocess.run(
-                ["chown", "-hv", "--", permx[i][0] + ":" + permx[i][1], realtarget + i]
+                ["chown", "-hv", "--", cfg["perms"][i][0] + ":" + cfg["perms"][i][1], realtarget + i]
             )
-        subprocess.run(["chmod", "--", permx[i][2], realtarget + i])
+        subprocess.run(["chmod", "--", cfg["perms"][i][2], realtarget + i])
 
 
 def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
