@@ -62,7 +62,12 @@ def verify_config():
     cfg["img_name"] = profiledef.img_name
     cfg["img_type"] = profiledef.img_type
     cfg["img_version"] = profiledef.img_version
-    cfg["partition_table"] = profiledef.partition_table
+    cfg["perms"] = profiledef.perms
+    try:
+        cfg["partition_table"] = profiledef.partition_table
+    except AttributeError:
+        cfg["partition_table_boot"] = profiledef.partition_table_boot
+        cfg["partition_table_root"] = profiledef.partition_table_root
     cfg["partition_extras"] = profiledef.partition_extras
     cfg["config_dir"] = config_dir
     cfg["work_dir"] = work_dir
@@ -91,6 +96,7 @@ def verify_config():
     if cfg["device"] in [
         "rpi",
         "rock5b",
+        "rock5b-split",
         "cpi4",
         "generic",
         "vim4-sd",
@@ -99,7 +105,9 @@ def verify_config():
     ]:
         pass
     else:
-        logging.error("Device not supported use rpi, rock5b, cpi4, edge2 or generic")
+        logging.error(
+            "Device not supported use rpi, rock5b, rock5b-split, cpi4, edge2 or generic"
+        )
         exit(1)
     if not os.path.isfile(packages_file):
         logging.error("packages file doesnt exist create the file packages." + arch)
@@ -115,6 +123,7 @@ def verify_config():
         packages = map(lambda package: package.strip(), f.readlines())
         packages = list(filter(lambda package: not package.startswith("#"), packages))
     return cfg
+
 
 def runonce(thing) -> bool:
     runonce_path = pathlib.Path("/tmp/runonce_" + thing)
@@ -132,6 +141,7 @@ def get_partuuid(device):
         .split('"')[-2]
     )
 
+
 def get_uuid(device):
     return (
         subprocess.check_output(["blkid", device])
@@ -140,13 +150,34 @@ def get_uuid(device):
         .split('"')[-2]
     )
 
-def get_fat_uuid(device): # I could do a smort one, but cmon, it's fine.
+
+def get_fat_uuid(device):  # I could do a smort one, but cmon, it's fine.
     return (
         subprocess.check_output(["blkid", device])
         .decode("utf-8")
         .split(" ")[3]
         .split('"')[-2]
     )
+
+
+def realpath(item):
+    return subprocess.check_output(["readlink", "-f", item]).decode("utf-8").split()[0]
+
+
+def fixperms(target):
+    realtarget = realpath(target)
+    for i in cfg["perms"].keys():
+        if realpath(realtarget + i) != realtarget + (i if not i[-1] == "/" else i[:-1]):
+            raise OSError("Out of bounds permission fix!")
+        if i[-1] == "/":
+            subprocess.run(
+                ["chown", "-Rh", "--", cfg["perms"][i][0] + ":" + cfg["perms"][i][1], realtarget + i]
+            )
+        else:
+            subprocess.run(
+                ["chown", "-hv", "--", cfg["perms"][i][0] + ":" + cfg["perms"][i][1], realtarget + i]
+            )
+        subprocess.run(["chmod", "--", cfg["perms"][i][2], realtarget + i])
 
 
 def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
@@ -162,10 +193,12 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
 def makeimg(size, fs, img_name, backend):
     format = "raw"
     image_ext = ".img"
-    if fs == "btrfs":
+    if fs == "ext4":
         img_size = size - int(390000)
-    else:
+    elif fs == "btrfs":
         img_size = size + int(1100000)
+    else:
+        img_size = int(size)
 
     if img_name == "qcow2":
         logging.info("Creating image file " + img_name + ".qcow2")
@@ -204,12 +237,16 @@ def makeimg(size, fs, img_name, backend):
         )
     else:
         subprocess.run(["modprobe", "loop"])
-        logging.info("Attaching image file " + img_name + ".img to loop device " + ldev)
+        logging.info(
+            "Attaching image file " + img_name + ".img to loop device " + next_loop()
+        )
+        ldev = next_loop()
         subprocess.run(["losetup", ldev, work_dir + "/" + img_name + ".img"])
 
     return img_size, ldev
 
-def partition(disk, fs, img_size, partition_table):
+
+def partition(disk, fs, img_size, partition_table, split=False):
     table = [["Partition", "Start", "End", "Size", "Filesystem"]]
     prtd_cmd = [
         "parted",
@@ -264,18 +301,21 @@ def partition(disk, fs, img_size, partition_table):
     logging.info(f"Full command: {prtd_cmd}")
     subprocess.run(prtd_cmd)
 
-    for i in cfg["partition_extras"](config_dir, disk):
-        subprocess.run(i)
+    if not split:
+        for i in cfg["partition_extras"](config_dir, disk):
+            subprocess.run(i)
 
     if not os.path.exists(mnt_dir):
         os.mkdir(mnt_dir)
 
+    idf = "p2" if not split else "p1"
+
     if fs == "ext4":
-        subprocess.run("mkfs.ext4 -F -L PRIMARY " + disk + "p2", shell=True)
-        subprocess.run("mount " + disk + "p2 " + mnt_dir, shell=True)
+        subprocess.run("mkfs.ext4 -F -L PRIMARY " + disk + idf, shell=True)
+        subprocess.run("mount " + disk + idf + " " + mnt_dir, shell=True)
         os.mkdir(mnt_dir + "/boot")
-    else:
-        p2 = disk + "p2 "
+    elif fs == "btrfs":
+        p2 = disk + idf + " "
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2, shell=True)
         subprocess.run("mount -t btrfs -o compress=zstd " + p2 + mnt_dir, shell=True)
         for i in ["/@", "/@home", "/@log", "/@pkg", "/@.snapshots"]:
@@ -293,13 +333,22 @@ def partition(disk, fs, img_size, partition_table):
 
     logging.info("Partitioned successfully")
 
-def create_fstab(fs) -> None:
+
+def create_fstab(fs, ldev, ldev_alt=None) -> None:
+    id1 = None
+    id2 = None
+    if ldev_alt is not None:
+        id1 = get_fat_uuid(ldev + "p1")
+        id2 = get_uuid(ldev_alt + "p1")
+    else:
+        id1 = get_fat_uuid(ldev + "p1")
+        id2 = get_uuid(ldev + "p2")
     if fs == "ext4":
         with open(mnt_dir + "/etc/fstab", "a") as f:
-            f.write("PARTUUID=" + get_partuuid(ldev + "p2") + " / ext4 defaults 0 0\n")
+            f.write("UUID=" + id1 + " / ext4 defaults 0 0\n")
             f.write(
-                "PARTUUID="
-                + get_partuuid(ldev + "p1")
+                "UUID="
+                + id2
                 + " /boot"
                 + "vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,"
                 + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
@@ -308,7 +357,7 @@ def create_fstab(fs) -> None:
         with open(mnt_dir + "/etc/fstab", "a") as f:
             f.write(
                 "UUID="
-                + get_fat_uuid(ldev + "p1")
+                + id1
                 + 28 * " "
                 + "/boot"
                 + 17 * " "
@@ -317,7 +366,7 @@ def create_fstab(fs) -> None:
             )
             f.write(
                 "UUID="
-                + get_uuid(ldev + "p2")
+                + id2
                 + " /"
                 + 21 * " "
                 + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/@"
@@ -326,7 +375,7 @@ def create_fstab(fs) -> None:
             )
             f.write(
                 "UUID="
-                + get_uuid(ldev + "p2")
+                + id2
                 + " /.snapshots"
                 + 11 * " "
                 + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=260,subvol=/@.snapshots"
@@ -335,7 +384,7 @@ def create_fstab(fs) -> None:
             )
             f.write(
                 "UUID="
-                + get_uuid(ldev + "p2")
+                + id2
                 + " /home"
                 + 17 * " "
                 + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home"
@@ -344,14 +393,14 @@ def create_fstab(fs) -> None:
             )
             f.write(
                 "UUID="
-                + get_uuid(ldev + "p2")
+                + id2
                 + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=259,subvol=/@pkg"
                 + 32 * " "
                 + "0 0\n"
             )
             f.write(
                 "UUID="
-                + get_uuid(ldev + "p2")
+                + id2
                 + " /var/log"
                 + 14 * " "
                 + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=258,subvol=/@log"
@@ -360,15 +409,18 @@ def create_fstab(fs) -> None:
             )
 
 
-def create_extlinux_conf(mnt_dir, configtxt, cmdline) -> None:
+def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
     if not os.path.exists(mnt_dir + "/boot/extlinux"):
         os.mkdir(mnt_dir + "/boot/extlinux")
         subprocess.run(["touch", mnt_dir + "/boot/extlinux/extlinux.conf"])
     with open(mnt_dir + "/boot/extlinux/extlinux.conf", "w") as f:
         f.write(configtxt)
-        # add append root=PARTUUID=... + cmdline
-        root_uuid = get_partuuid(ldev + "p2")
-        f.write("    append root=PARTUUID=" + root_uuid + " " + cmdline)
+        # add append root=UUID=... + cmdline
+        if "partition_table_root" in cfg:
+            root_uuid = get_uuid(ldev + "p1")
+        else:
+            root_uuid = get_uuid(ldev + "p2")
+        f.write("    append root=UUID=" + root_uuid + " " + cmdline)
 
 
 def cleanup(work_dir) -> None:
@@ -376,11 +428,13 @@ def cleanup(work_dir) -> None:
     subprocess.run(["rm", "-rf", work_dir])
 
 
-def unmount(img_backend, mnt_dir) -> None:
+def unmount(img_backend, mnt_dir, ldev, ldev_alt=None) -> None:
     logging.info("Unmounting!")
     subprocess.run(["umount", "-R", mnt_dir])
     if img_backend == "loop":
         subprocess.run(["losetup", "-d", ldev])
+        if ldev_alt is not None:
+            subprocess.run(["losetup", "-d", ldev_alt])
     elif img_backend == "qemu-nbd":
         subprocess.run(["qemu-nbd", "-d", ldev])
 
@@ -430,6 +484,20 @@ def copyfiles(ot, to, retainperms=False) -> None:
         subprocess.run("cp -ar " + ot + "/* " + to, shell=True)
 
 
+def machine_id():
+    subprocess.run(
+        " ".join(
+            [
+                "rm",
+                "-r",
+                cfg["install_dir"] + "/etc/machine-id",
+                cfg["install_dir"] + "/var/lib/dbus/machine-id",
+            ]
+        ),
+        shell=True,
+    )
+
+
 def main():
     logging.basicConfig(
         format="%(asctime)s %(levelname)s: %(message)s",
@@ -461,39 +529,33 @@ def main():
     logging.info("            Packages File:   " + cfg["packages_file"])
     if cfg["device"] == "rpi":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        fixperms(cfg["install_dir"])
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
-        subprocess.run(
-            " ".join(
-                [
-                    "rm",
-                    "-rf",
-                    cfg["install_dir"] + "/etc/machine-id",
-                    cfg["install_dir"] + "/var/lib/dbus/machine-id",
-                ]
-            ),
-            shell=True,
-        )
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        machine_id()
+        fixperms(cfg["install_dir"])
         logging.info("Partitioning rpi")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
-        img_size, ldev = makeimg(rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"])
-        partition(ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"]))
+        img_size, ldev = makeimg(
+            rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
+        )
+        partition(
+            ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"])
+        )
         if not os.path.exists(mnt_dir):
             os.mkdir(mnt_dir)
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
         with open(mnt_dir + "/boot/cmdline.txt", "w") as f:
-            root_uuid = get_partuuid(ldev + "p2")
-            f.write("root=PARTUUID=" + root_uuid + " " + cmdline)
+            root_uuid = get_uuid(ldev + "p2")
+            f.write("root=UUID=" + root_uuid + " " + cmdline)
         with open(work_dir + "/mnt/boot/config.txt", "a") as f:
             f.write(configtxt)
-        create_fstab(cfg["fs"])
-        unmount(cfg["img_backend"], mnt_dir)
+        create_fstab(cfg["fs"], ldev)
+        unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
             copyimage(cfg["img_name"])
@@ -502,73 +564,110 @@ def main():
         cleanup(cfg["work_dir"])
     elif cfg["device"] == "rock5b":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        fixperms(cfg["install_dir"])
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
-        subprocess.run(
-            " ".join(
-                [
-                    "rm",
-                    "-rf",
-                    cfg["install_dir"] + "/etc/machine-id",
-                    cfg["install_dir"] + "/var/lib/dbus/machine-id",
-                ]
-            ),
-            shell=True,
-        )
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        machine_id()
+        fixperms(cfg["install_dir"])
         logging.info("Partitioning rock5b")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
-        img_size, ldev = makeimg(rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"])
-        partition(ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"]))
+        img_size, ldev = makeimg(
+            rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
+        )
+        partition(
+            ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"])
+        )
         if not os.path.exists(mnt_dir):
             os.mkdir(mnt_dir)
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
-        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"])
-        create_fstab(cfg["fs"])
-        unmount(cfg["img_backend"], mnt_dir)
+        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev)
+        create_fstab(cfg["fs"], ldev)
+        unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
             copyimage(cfg["img_name"])
         else:
             compressimage(cfg["img_name"])
         cleanup(cfg["work_dir"])
+    elif cfg["device"] == "rock5b-split":
+        copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
+        fixperms(cfg["install_dir"])
+        pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
+        machine_id()
+        fixperms(cfg["install_dir"])
+        logging.info("Partitioning rock5b-split")
+        rootfs_size = int(
+            subprocess.check_output(["du", "-s", cfg["install_dir"]])
+            .split()[0]
+            .decode("utf-8")
+        )
+        img_size_b, ldev_b = makeimg(
+            "150000", None, cfg["img_name"] + "_BOOT", cfg["img_backend"]
+        )
+        img_size_r, ldev_r = makeimg(
+            rootfs_size, cfg["fs"], cfg["img_name"] + "_ROOTFS", cfg["img_backend"]
+        )
+        partition(ldev_b, None, img_size_b, cfg["partition_table_boot"])
+        partition(
+            ldev_r,
+            cfg["fs"],
+            img_size_r,
+            cfg["partition_table_root"](img_size_r, cfg["fs"]),
+            split=True,
+        )
+        if not os.path.exists(mnt_dir):
+            os.mkdir(mnt_dir)
+        subprocess.run("mount " + ldev_b + "p1 " + mnt_dir + "/boot", shell=True)
+        copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
+        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev_r)
+        create_fstab(cfg["fs"], ldev_b, ldev_r)
+        unmount(cfg["img_backend"], mnt_dir, ldev_b, ldev_r)
+        cleanup(cfg["img_backend"])
+        if args.no_compress:
+            copyimage(cfg["img_name"] + "_BOOT")
+            copyimage(cfg["img_name"] + "_ROOTFS")
+        else:
+            compressimage(cfg["img_name"] + "_BOOT")
+            compressimage(cfg["img_name"] + "_ROOTFS")
+        cleanup(cfg["work_dir"])
+
     elif cfg["device"] == "rock4c-plus":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        fixperms(cfg["install_dir"])
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
-        subprocess.run(
-            " ".join(
-                [
-                    "rm",
-                    "-rf",
-                    cfg["install_dir"] + "/etc/machine-id",
-                    cfg["install_dir"] + "/var/lib/dbus/machine-id",
-                ]
-            ),
-            shell=True,
-        )
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        machine_id()
+        fixperms(cfg["install_dir"])
         logging.info("Partitioning rock4c-plus")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
-        img_size, ldev = makeimg(rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"])
-        partition(ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"]))
+        img_size, ldev = makeimg(
+            rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
+        )
+        partition(
+            ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"])
+        )
         if not os.path.exists(mnt_dir):
             os.mkdir(mnt_dir)
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
-        subprocess.run(["cp", "-v", config_dir + "/nvram.txt", cfg["install_dir"] + "/usr/lib/firmware/brcm/brcmfmac43455-sdio.txt"])
+        subprocess.run(
+            [
+                "cp",
+                "-v",
+                config_dir + "/nvram.txt",
+                cfg["install_dir"] + "/usr/lib/firmware/brcm/brcmfmac43455-sdio.txt",
+            ]
+        )
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
-        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"])
-        create_fstab(cfg["fs"])
-        unmount(cfg["img_backend"], mnt_dir)
+        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], next_loop())
+        create_fstab(cfg["fs"], ldev)
+        unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
             copyimage(cfg["img_name"])
@@ -578,32 +677,24 @@ def main():
     elif cfg["device"] == "vim4-sd":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
-        subprocess.run(
-            " ".join(
-                [
-                    "rm",
-                    "-rf",
-                    cfg["install_dir"] + "/etc/machine-id",
-                    cfg["install_dir"] + "/var/lib/dbus/machine-id",
-                ]
-            ),
-            shell=True,
-        )
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        machine_id()
+        fixperms(cfg["install_dir"])
         logging.info("Partitioning vim4")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
-        img_size, ldev = makeimg(rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"])
+        img_size, ldev = makeimg(
+            rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
+        )
         partition(ldev, cfg["fs"], img_size)
         if not os.path.exists(mnt_dir + "/boot"):
             os.mkdir(mnt_dir + "/boot")
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
         create_extlinux_conf()
-        create_fstab(cfg["fs"])
+        create_fstab(cfg["fs"], ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
             copyimage(cfg["img_name"])
@@ -612,20 +703,10 @@ def main():
         cleanup(cfg["work_dir"])
     elif cfg["device"] == "cpi4":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        fixperms(cfg["install_dir"])
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
-        subprocess.run(
-            " ".join(
-                [
-                    "rm",
-                    "-rf",
-                    cfg["install_dir"] + "/etc/machine-id",
-                    cfg["install_dir"] + "/var/lib/dbus/machine-id",
-                ]
-            ),
-            shell=True,
-        )
-        subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        machine_id()
+        fixperms(cfg["install_dir"])
         logging.info("Partitioning cpi4")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", cfg["install_dir"]])
@@ -633,15 +714,17 @@ def main():
             .decode("utf-8")
         )
         img_size, ldev = makeimg(rootfs_size, fs, cfg["img_name"], cfg["img_backend"])
-        partition(ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"]))
+        partition(
+            ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"])
+        )
         if not os.path.exists(mnt_dir):
             os.mkdir(mnt_dir)
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
-        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"])
-        create_fstab(cfg["fs"])
-        unmount(cfg["img_backend"], mnt_dir)
+        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev)
+        create_fstab(cfg["fs"], ldev)
+        unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
             copyimage(cfg["img_name"])
@@ -654,7 +737,7 @@ def main():
         # subprocess.run(' '.join(["rm", "-rf",
         #     cfg["install_dir"] + "/etc/machine-id",
         #     cfg["install_dir"] + "/var/lib/dbus/machine-id"]),shell=True)
-        # subprocess.run(["sh", config_dir + "/fixperms.sh", cfg["install_dir"]])
+        # fixperms(cfg["install_dir"])
         # logging.info("Partitioning edge 2")
         # rootfs_size=int(subprocess.check_output(["du", "-s", cfg["install_dir"]]).split()[0].decode("utf-8"))
         # img_size,ldev = makeimg(rootfs_size,fs,cfg["img_name"],img_backend)
@@ -665,7 +748,7 @@ def main():
         # subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
         # copyfiles(cfg["install_dir"], mnt_dir,retainperms=True)
         # create_extlinux_conf()
-        # create_fstab(cfg["fs"])
+        # create_fstab(cfg["fs"], ldev)
         # cleanup(cfg["img_backend"])
         if args.no_compress:
             copyimage(cfg["img_name"])
@@ -695,10 +778,14 @@ def handler(signal_received, frame):
     exit(0)
 
 
+def next_loop() -> str:
+    return subprocess.check_output(["losetup", "-f"]).decode("utf-8").strip("\n")
+
+
 if __name__ == "__main__":
     cfg = verify_config()
     if cfg["img_backend"] == "loop":
-        ldev = subprocess.check_output(["losetup", "-f"]).decode("utf-8").strip("\n")
+        next_loop()
     elif cfg["img_backend"] == "qemu-nbd":
         subprocess.run(["modprobe", "nbd"])
         ldev = "/dev/nbd2"

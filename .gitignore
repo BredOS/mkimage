@@ -2,3 +2,4 @@ out/
 *.img.xz
 work/
 *.log
+__pycache__/
