@@ -171,11 +171,23 @@ def fixperms(target):
             raise OSError("Out of bounds permission fix!")
         if i[-1] == "/":
             subprocess.run(
-                ["chown", "-Rh", "--", cfg["perms"][i][0] + ":" + cfg["perms"][i][1], realtarget + i]
+                [
+                    "chown",
+                    "-Rh",
+                    "--",
+                    cfg["perms"][i][0] + ":" + cfg["perms"][i][1],
+                    realtarget + i,
+                ]
             )
         else:
             subprocess.run(
-                ["chown", "-hv", "--", cfg["perms"][i][0] + ":" + cfg["perms"][i][1], realtarget + i]
+                [
+                    "chown",
+                    "-hv",
+                    "--",
+                    cfg["perms"][i][0] + ":" + cfg["perms"][i][1],
+                    realtarget + i,
+                ]
             )
         subprocess.run(["chmod", "--", cfg["perms"][i][2], realtarget + i])
 
@@ -186,7 +198,18 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
         packages = list(filter(lambda package: not package.startswith("#"), packages))
     logging.info("Install dir is:" + install_dir)
     logging.info("Running pacstrap")
-    subprocess.run(["pacstrap", "-c", "-C", pacman_conf, "-G", install_dir] + packages)
+    subprocess.run(
+        ["pacstrap", "-c", "-C", pacman_conf, "-M", "-G", install_dir] + packages,
+        check=True,
+    )
+    # subprocess.run(
+    #    [
+    #        "mv",
+    #        "-v",
+    #        cfg["install_dir"] + "/etc/pacman.d/mirrorlist.pacnew",
+    #        cfg["install_dir"] + "/etc/pacman.d/mirrorlist",
+    #    ]
+    # )
     logging.info("Pacstrap complete")
 
 
@@ -665,7 +688,7 @@ def main():
             ]
         )
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
-        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], next_loop())
+        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev)
         create_fstab(cfg["fs"], ldev)
         unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
