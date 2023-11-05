@@ -195,21 +195,18 @@ def fixperms(target):
 def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
     with open(packages_file) as f:
         packages = map(lambda package: package.strip(), f.readlines())
-        packages = list(filter(lambda package: not package.startswith("#"), packages))
+        packages = list(
+            filter(
+                lambda package: not (package.startswith("#") or not len(package)),
+                packages,
+            )
+        )
     logging.info("Install dir is:" + install_dir)
     logging.info("Running pacstrap")
     subprocess.run(
         ["pacstrap", "-c", "-C", pacman_conf, "-M", "-G", install_dir] + packages,
         check=True,
     )
-    # subprocess.run(
-    #    [
-    #        "mv",
-    #        "-v",
-    #        cfg["install_dir"] + "/etc/pacman.d/mirrorlist.pacnew",
-    #        cfg["install_dir"] + "/etc/pacman.d/mirrorlist",
-    #    ]
-    # )
     logging.info("Pacstrap complete")
 
 
