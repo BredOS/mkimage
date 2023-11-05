@@ -207,14 +207,6 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
         ["pacstrap", "-c", "-C", pacman_conf, "-M", "-G", install_dir] + packages,
         check=True,
     )
-    # subprocess.run(
-    #    [
-    #        "mv",
-    #        "-v",
-    #        cfg["install_dir"] + "/etc/pacman.d/mirrorlist.pacnew",
-    #        cfg["install_dir"] + "/etc/pacman.d/mirrorlist",
-    #    ]
-    # )
     logging.info("Pacstrap complete")
 
 
