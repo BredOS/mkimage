@@ -75,8 +75,8 @@ def verify_config():
     packages_file = config_dir + "packages." + cfg["arch"]
     cfg["packages_file"] = packages_file
 
-    if cfg["arch"] not in ["aarch64", "armv7h"]:
-        logging.error("Arch incompatible. Use aarch64 or armv7h")
+    if cfg["arch"] not in ["aarch64", "armv7h", "riscv64"]:
+        logging.error("Arch incompatible. Use aarch64, armv7h or riscv64")
         exit(1)
     if not cfg["img_name"]:
         logging.error("Image name not set")
