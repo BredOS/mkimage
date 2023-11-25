@@ -696,10 +696,11 @@ def main():
         cleanup(cfg["work_dir"])
     elif cfg["device"] == "vim4-sd":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
+        fixperms(cfg["install_dir"])
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
-        logging.info("Partitioning vim4")
+        logging.info("Partitioning vim4-sd")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", cfg["install_dir"]])
             .split()[0]
@@ -708,13 +709,16 @@ def main():
         img_size, ldev = makeimg(
             rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
         )
-        partition(ldev, cfg["fs"], img_size)
+        partition(
+            ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"])
+        )
         if not os.path.exists(mnt_dir + "/boot"):
             os.mkdir(mnt_dir + "/boot")
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
-        create_extlinux_conf()
+        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev)
         create_fstab(cfg["fs"], ldev)
+        unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
             copyimage(cfg["img_name"])
