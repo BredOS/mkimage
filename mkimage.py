@@ -99,7 +99,7 @@ def verify_config():
         "rock5b-split",
         "cpi4",
         "generic",
-        "vim4-sd",
+        "vim4",
         "edge2",
         "rock4c-plus",
     ]:
@@ -354,7 +354,7 @@ def partition(disk, fs, img_size, partition_table, split=False):
     logging.info("Partitioned successfully")
 
 
-def create_fstab(fs, ldev, ldev_alt=None) -> None:
+def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False, no_discard=False) -> None:
     id1 = None
     id2 = None
     if ldev_alt is not None:
@@ -370,7 +370,8 @@ def create_fstab(fs, ldev, ldev_alt=None) -> None:
                 "UUID="
                 + id2
                 + " /boot"
-                + "vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,"
+                + "vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,"
+                + ("iocharset=ascii," if not simple_vfat else "")
                 + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
             )
     else:
@@ -381,7 +382,8 @@ def create_fstab(fs, ldev, ldev_alt=None) -> None:
                 + 28 * " "
                 + "/boot"
                 + 17 * " "
-                + "vfat  rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,"
+                + "vfat  rw,relatime,fmask=0022,dmask=0022,codepage=437,"
+                + ("iocharset=ascii," if not simple_vfat else "")
                 + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
             )
             f.write(
@@ -389,7 +391,9 @@ def create_fstab(fs, ldev, ldev_alt=None) -> None:
                 + id2
                 + " /"
                 + 21 * " "
-                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/@"
+                + "btrfs rw,relatime,ssd"
+                + (",discard=async" if not no_discard else "")
+                + ",space_cache=v2,subvol=/@"
                 + 35 * " "
                 + "0 0\n"
             )
@@ -398,7 +402,7 @@ def create_fstab(fs, ldev, ldev_alt=None) -> None:
                 + id2
                 + " /.snapshots"
                 + 11 * " "
-                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=260,subvol=/@.snapshots"
+                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@.snapshots"
                 + 25 * " "
                 + "0 0\n"
             )
@@ -407,14 +411,14 @@ def create_fstab(fs, ldev, ldev_alt=None) -> None:
                 + id2
                 + " /home"
                 + 17 * " "
-                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home"
+                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@home"
                 + 31 * " "
                 + "0 0\n"
             )
             f.write(
                 "UUID="
                 + id2
-                + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=259,subvol=/@pkg"
+                + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@pkg"
                 + 32 * " "
                 + "0 0\n"
             )
@@ -423,7 +427,7 @@ def create_fstab(fs, ldev, ldev_alt=None) -> None:
                 + id2
                 + " /var/log"
                 + 14 * " "
-                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvolid=258,subvol=/@log"
+                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@log"
                 + 32 * " "
                 + "0 0\n"
             )
@@ -694,7 +698,7 @@ def main():
         else:
             compressimage(cfg["img_name"])
         cleanup(cfg["work_dir"])
-    elif cfg["device"] == "vim4-sd":
+    elif cfg["device"] == "vim4":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
         fixperms(cfg["install_dir"])
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
@@ -710,7 +714,12 @@ def main():
             rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
         )
         partition(
-            ldev, cfg["fs"], img_size, cfg["partition_table"](img_size, cfg["fs"])
+            ldev,
+            cfg["fs"],
+            img_size,
+            cfg["partition_table"](img_size, cfg["fs"]),
+            simple_vfat=True,
+            no_discard=True,
         )
         if not os.path.exists(mnt_dir + "/boot"):
             os.mkdir(mnt_dir + "/boot")
