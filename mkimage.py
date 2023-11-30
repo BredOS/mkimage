@@ -718,15 +718,13 @@ def main():
             cfg["fs"],
             img_size,
             cfg["partition_table"](img_size, cfg["fs"]),
-            simple_vfat=True,
-            no_discard=True,
         )
         if not os.path.exists(mnt_dir + "/boot"):
             os.mkdir(mnt_dir + "/boot")
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
         create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev)
-        create_fstab(cfg["fs"], ldev)
+        create_fstab(cfg["fs"], ldev, simple_vfat=True, no_discard=True)
         unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
