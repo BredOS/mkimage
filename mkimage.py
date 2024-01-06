@@ -8,6 +8,7 @@ from signal import SIGTERM, signal, SIGINT
 import subprocess
 import sys
 import time
+import datetime
 import prettytable
 
 parser = argparse.ArgumentParser(description="Create archlinux arm based images.")
@@ -92,7 +93,7 @@ def verify_config():
     if cfg["fs"] not in ["ext4", "btrfs"]:
         logging.error("Filesystem not supported use ext4 or btrfs")
         exit(1)
-    # == 'rpi' or device == 'rock5b' or device == 'generic' or device == 'vim4-sd' or device == 'cpi4' or device
+    # == 'rpi' or device == 'rock5b' or device == 'generic' or device == 'vim4' or device == 'cpi4' or device
     if cfg["device"] in [
         "rpi",
         "rock5b",
@@ -704,7 +705,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
-        logging.info("Partitioning vim4-sd")
+        logging.info("Partitioning vim4")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", cfg["install_dir"]])
             .split()[0]
@@ -728,9 +729,27 @@ def main():
         unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
+            print(
+                "The image will not have metadata for owowoo applied since it's not compressed!"
+            )
             copyimage(cfg["img_name"])
         else:
             compressimage(cfg["img_name"])
+            subprocess.check_output(["chmod", "+x", config_dir + "/xze"])
+            subprocess.check_output(
+                [
+                    config_dir + "/xze",
+                    cfg["out_dir"] + "/" + cfg["img_name"] + ".img.xz",
+                    "--meta",
+                    "label=BredOS",
+                    "builder=BredOS",
+                    "date=" + time.ctime().replace("  ", " "),
+                    "match=BOARD=VIM4",
+                    "link=https://bredos.org/",
+                    "duration=400",
+                    "desc=Vim 4 BredOS Plasma edition v" + cfg["edition"],
+                ]
+            )
         cleanup(cfg["work_dir"])
     elif cfg["device"] == "cpi4":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
