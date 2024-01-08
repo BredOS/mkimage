@@ -70,6 +70,7 @@ def verify_config():
         cfg["partition_table_boot"] = profiledef.partition_table_boot
         cfg["partition_table_root"] = profiledef.partition_table_root
     cfg["partition_extras"] = profiledef.partition_extras
+    cfg["uboot_commands"] = profiledef.uboot_commands
     cfg["config_dir"] = config_dir
     cfg["work_dir"] = work_dir
 
@@ -85,8 +86,6 @@ def verify_config():
     if not cfg["img_version"]:
         logging.error("Image version not set")
         exit(1)
-    if cfg["device"] == "vim4":
-        cfg["uboot"] = profiledef.uboot
 
     install_dir = work_dir + "/" + cfg["arch"]
     cfg["install_dir"] = install_dir
@@ -262,6 +261,7 @@ def makeimg(size, fs, img_name, backend):
         ldev = next_loop()
         subprocess.run(["losetup", ldev, work_dir + "/" + img_name + ".img"])
 
+    logging.info("Image file created")
     return img_size, ldev
 
 
@@ -316,6 +316,10 @@ def partition(disk, fs, img_size, partition_table, split=False):
             title=disk + " Size " + str(int(img_size / 1000)) + "M"
         )
     )
+
+    logging.info("Running uboot commands..")
+    for i in cfg["uboot_commands"](config_dir, disk):
+        subprocess.run(i)
 
     logging.info(f"Full command: {prtd_cmd}")
     subprocess.run(prtd_cmd)
@@ -704,7 +708,6 @@ def main():
         img_size, ldev = makeimg(
             rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
         )
-        cfg["uboot"](cfg["config_dir"], ldev)
         partition(
             ldev,
             cfg["fs"],
@@ -720,7 +723,7 @@ def main():
         unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
-            print(
+            logging.info(
                 "The image will not have metadata for oowow applied since it's not compressed!"
             )
             copyimage(cfg["img_name"])
@@ -738,7 +741,10 @@ def main():
                     "match=BOARD=VIM4",
                     "link=https://bredos.org/",
                     "duration=400",
-                    "desc=Vim 4 BredOS " + cfg["edition"] + " edition v" + cfg["img_version"],
+                    "desc=Vim 4 BredOS "
+                    + cfg["edition"]
+                    + " edition v"
+                    + cfg["img_version"],
                 ]
             )
         cleanup(cfg["work_dir"])
