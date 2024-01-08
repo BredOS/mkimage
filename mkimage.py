@@ -85,6 +85,8 @@ def verify_config():
     if not cfg["img_version"]:
         logging.error("Image version not set")
         exit(1)
+    if cfg["device"] == "vim4":
+        cfg["uboot"] = profiledef.uboot
 
     install_dir = work_dir + "/" + cfg["arch"]
     cfg["install_dir"] = install_dir
@@ -214,12 +216,7 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
 def makeimg(size, fs, img_name, backend):
     format = "raw"
     image_ext = ".img"
-    if fs == "ext4":
-        img_size = size - int(390000)
-    elif fs == "btrfs":
-        img_size = size + int(1100000)
-    else:
-        img_size = int(size)
+    img_size = size + int(1100000)
 
     if img_name == "qcow2":
         logging.info("Creating image file " + img_name + ".qcow2")
@@ -242,6 +239,7 @@ def makeimg(size, fs, img_name, backend):
                 "of=" + work_dir + "/" + img_name + ".img",
                 "bs=1k",
                 "count=" + str(img_size),
+                "status=progress",
             ]
         )
 
@@ -367,26 +365,8 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False, no_discard=False) -
     if fs == "ext4":
         with open(mnt_dir + "/etc/fstab", "a") as f:
             f.write("UUID=" + id1 + " / ext4 defaults 0 0\n")
-            f.write(
-                "UUID="
-                + id2
-                + " /boot"
-                + "vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,"
-                + ("iocharset=ascii," if not simple_vfat else "")
-                + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
-            )
     else:
         with open(mnt_dir + "/etc/fstab", "a") as f:
-            f.write(
-                "UUID="
-                + id1
-                + 28 * " "
-                + "/boot"
-                + 17 * " "
-                + "vfat  rw,relatime,fmask=0022,dmask=0022,codepage=437,"
-                + ("iocharset=ascii," if not simple_vfat else "")
-                + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
-            )
             f.write(
                 "UUID="
                 + id2
@@ -394,7 +374,7 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False, no_discard=False) -
                 + 21 * " "
                 + "btrfs rw,relatime,ssd"
                 + (",discard=async" if not no_discard else "")
-                + ",space_cache=v2,subvol=/@"
+                + ",compress=zstd,space_cache=v2,subvol=/@"
                 + 35 * " "
                 + "0 0\n"
             )
@@ -403,7 +383,7 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False, no_discard=False) -
                 + id2
                 + " /.snapshots"
                 + 11 * " "
-                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@.snapshots"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,space_cache=v2,subvol=/@.snapshots"
                 + 25 * " "
                 + "0 0\n"
             )
@@ -412,7 +392,7 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False, no_discard=False) -
                 + id2
                 + " /home"
                 + 17 * " "
-                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@home"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,space_cache=v2,subvol=/@home"
                 + 31 * " "
                 + "0 0\n"
             )
@@ -428,10 +408,21 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False, no_discard=False) -
                 + id2
                 + " /var/log"
                 + 14 * " "
-                + "btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@log"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,space_cache=v2,subvol=/@log"
                 + 32 * " "
                 + "0 0\n"
             )
+    with open(mnt_dir + "/etc/fstab", "a") as f:
+        f.write(
+            "UUID="
+            + id1
+            + 28 * " "
+            + "/boot"
+            + 17 * " "
+            + "vfat  rw,relatime,fmask=0022,dmask=0022,codepage=437,"
+            + ("iocharset=ascii," if not simple_vfat else "")
+            + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
+        )
 
 
 def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
@@ -560,7 +551,7 @@ def main():
         fixperms(cfg["install_dir"])
         logging.info("Partitioning rpi")
         rootfs_size = int(
-            subprocess.check_output(["du", "-s", cfg["install_dir"]])
+            subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
@@ -595,7 +586,7 @@ def main():
         fixperms(cfg["install_dir"])
         logging.info("Partitioning rock5b")
         rootfs_size = int(
-            subprocess.check_output(["du", "-s", cfg["install_dir"]])
+            subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
@@ -626,7 +617,7 @@ def main():
         fixperms(cfg["install_dir"])
         logging.info("Partitioning rock5b-split")
         rootfs_size = int(
-            subprocess.check_output(["du", "-s", cfg["install_dir"]])
+            subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
@@ -659,7 +650,6 @@ def main():
             compressimage(cfg["img_name"] + "_BOOT")
             compressimage(cfg["img_name"] + "_ROOTFS")
         cleanup(cfg["work_dir"])
-
     elif cfg["device"] == "rock4c-plus":
         copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
         fixperms(cfg["install_dir"])
@@ -668,7 +658,7 @@ def main():
         fixperms(cfg["install_dir"])
         logging.info("Partitioning rock4c-plus")
         rootfs_size = int(
-            subprocess.check_output(["du", "-s", cfg["install_dir"]])
+            subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
@@ -707,13 +697,14 @@ def main():
         fixperms(cfg["install_dir"])
         logging.info("Partitioning vim4")
         rootfs_size = int(
-            subprocess.check_output(["du", "-s", cfg["install_dir"]])
+            subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
         img_size, ldev = makeimg(
             rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
         )
+        cfg["uboot"](cfg["config_dir"], ldev)
         partition(
             ldev,
             cfg["fs"],
@@ -730,7 +721,7 @@ def main():
         cleanup(cfg["img_backend"])
         if args.no_compress:
             print(
-                "The image will not have metadata for owowoo applied since it's not compressed!"
+                "The image will not have metadata for oowow applied since it's not compressed!"
             )
             copyimage(cfg["img_name"])
         else:
@@ -747,7 +738,7 @@ def main():
                     "match=BOARD=VIM4",
                     "link=https://bredos.org/",
                     "duration=400",
-                    "desc=Vim 4 BredOS Plasma edition v" + cfg["edition"],
+                    "desc=Vim 4 BredOS " + cfg["edition"] + " edition v" + cfg["img_version"],
                 ]
             )
         cleanup(cfg["work_dir"])
@@ -759,7 +750,7 @@ def main():
         fixperms(cfg["install_dir"])
         logging.info("Partitioning cpi4")
         rootfs_size = int(
-            subprocess.check_output(["du", "-s", cfg["install_dir"]])
+            subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
             .split()[0]
             .decode("utf-8")
         )
@@ -789,7 +780,7 @@ def main():
         #     cfg["install_dir"] + "/var/lib/dbus/machine-id"]),shell=True)
         # fixperms(cfg["install_dir"])
         # logging.info("Partitioning edge 2")
-        # rootfs_size=int(subprocess.check_output(["du", "-s", cfg["install_dir"]]).split()[0].decode("utf-8"))
+        # rootfs_size=int(subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]]).split()[0].decode("utf-8"))
         # img_size,ldev = makeimg(rootfs_size,fs,cfg["img_name"],img_backend)
         # partition_edge2(ldev, fs, img_size)
         # logging.info("Partitioned edge 2 successfully")
