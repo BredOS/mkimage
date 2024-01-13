@@ -17,6 +17,9 @@ parser.add_argument(
     "-x", "--no-compress", help="Do not compress into a .xz", action="store_true"
 )
 parser.add_argument(
+    "-ff", "--fast-forward", help="Compress very briefly .xz", action="store_true"
+)
+parser.add_argument(
     "-c", "--config_dir", help="Folder with config files", required=True
 )
 parser.add_argument("-o", "--out_dir", help="Folder to put output files", required=True)
@@ -65,12 +68,26 @@ def verify_config():
     cfg["img_version"] = profiledef.img_version
     cfg["perms"] = profiledef.perms
     try:
+        cfg["part_type"] = "gpt" if profiledef.use_gpt else "msdos"
+    except AttributeError:
+        cfg["part_type"] = "gpt"
+    try:
+        cfg["boot_set_esp"] = profiledef.boot_set_esp
+    except AttributeError:
+        cfg["boot_set_esp"] = True
+    try:
         cfg["partition_table"] = profiledef.partition_table
     except AttributeError:
         cfg["partition_table_boot"] = profiledef.partition_table_boot
         cfg["partition_table_root"] = profiledef.partition_table_root
-    cfg["partition_extras"] = profiledef.partition_extras
-    cfg["uboot_commands"] = profiledef.uboot_commands
+    try:
+        cfg["partition_suffix"] = profiledef.partition_suffix
+    except AttributeError:
+        cfg["partition_suffix"] = []
+    try:
+        cfg["partition_prefix"] = profiledef.partition_prefix
+    except AttributeError:
+        cfg["partition_prefix"] = []
     cfg["config_dir"] = config_dir
     cfg["work_dir"] = work_dir
 
@@ -135,31 +152,20 @@ def runonce(thing) -> bool:
         return True
 
 
-def get_partuuid(device):
-    return (
-        subprocess.check_output(["blkid", device])
-        .decode("utf-8")
-        .split(" ")[-1]
-        .split('"')[-2]
-    )
+def get_fsline(device):
+    fl = subprocess.check_output(["blkid", device]).decode("utf-8")
+    spl = fl.split(" ")
+    for i in spl:
+        if i.startswith("UUID="):
+            return i.replace('"', "")
 
 
-def get_uuid(device):
-    return (
-        subprocess.check_output(["blkid", device])
-        .decode("utf-8")
-        .split(" ")[2]
-        .split('"')[-2]
-    )
-
-
-def get_fat_uuid(device):  # I could do a smort one, but cmon, it's fine.
-    return (
-        subprocess.check_output(["blkid", device])
-        .decode("utf-8")
-        .split(" ")[3]
-        .split('"')[-2]
-    )
+def get_parttype(device):
+    fl = subprocess.check_output(["blkid", device]).decode("utf-8")
+    spl = fl.split(" ")
+    for i in spl:
+        if i.startswith("TYPE="):
+            return i[6:-1]
 
 
 def realpath(item):
@@ -274,7 +280,7 @@ def partition(disk, fs, img_size, partition_table, split=False):
         "--align",
         "optimal",
         "mklabel",
-        "gpt",
+        cfg["part_type"],
     ]
     ld_partition_table = partition_table
 
@@ -291,18 +297,16 @@ def partition(disk, fs, img_size, partition_table, split=False):
                 "1",
                 "boot",
                 "on",
-                "set",
-                "1",
-                "esp",
-                "on",
             ]
+            if cfg["boot_set_esp"]:
+                prtd_cmd += ["set", "1", "esp", "on"]
         elif ld_partition_table[i][3] == "NONE":
             pass
         else:
             prtd_cmd += [
                 "mkpart",
                 "primary",
-                fs,
+                partition_table[i][3],
                 ld_partition_table[i][0],
                 ld_partition_table[i][1],
             ]
@@ -317,15 +321,15 @@ def partition(disk, fs, img_size, partition_table, split=False):
         )
     )
 
-    logging.info("Running uboot commands..")
-    for i in cfg["uboot_commands"](config_dir, disk):
-        subprocess.run(i)
+    if not split:
+        for i in cfg["partition_prefix"](config_dir, disk):
+            subprocess.run(i)
 
     logging.info(f"Full command: {prtd_cmd}")
     subprocess.run(prtd_cmd)
 
     if not split:
-        for i in cfg["partition_extras"](config_dir, disk):
+        for i in cfg["partition_suffix"](config_dir, disk):
             subprocess.run(i)
 
     if not os.path.exists(mnt_dir):
@@ -357,76 +361,70 @@ def partition(disk, fs, img_size, partition_table, split=False):
     logging.info("Partitioned successfully")
 
 
-def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False, no_discard=False) -> None:
-    id1 = None
-    id2 = None
-    if ldev_alt is not None:
-        id1 = get_fat_uuid(ldev + "p1")
-        id2 = get_uuid(ldev_alt + "p1")
-    else:
-        id1 = get_fat_uuid(ldev + "p1")
-        id2 = get_uuid(ldev + "p2")
+def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
+    id1 = get_fsline(ldev + "p1")
+    id2 = get_fsline((ldev_alt + "p1") if ldev_alt is not None else (ldev + "p2"))
     if fs == "ext4":
         with open(mnt_dir + "/etc/fstab", "a") as f:
-            f.write("UUID=" + id1 + " / ext4 defaults 0 0\n")
+            f.write(id1 + " / ext4 defaults 0 0\n")
     else:
         with open(mnt_dir + "/etc/fstab", "a") as f:
             f.write(
-                "UUID="
-                + id2
+                id2
                 + " /"
                 + 21 * " "
-                + "btrfs rw,relatime,ssd"
-                + (",discard=async" if not no_discard else "")
-                + ",compress=zstd,space_cache=v2,subvol=/@"
-                + 35 * " "
-                + "0 0\n"
+                + "btrfs rw,relatime,ssd,discard=async"
+                + ",compress=zstd,space_cache=v2,subvol=/@ 0 0\n"
             )
             f.write(
-                "UUID="
-                + id2
+                id2
                 + " /.snapshots"
                 + 11 * " "
-                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,space_cache=v2,subvol=/@.snapshots"
-                + 25 * " "
-                + "0 0\n"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,"
+                + "space_cache=v2,subvol=/@.snapshots 0 0\n"
             )
             f.write(
-                "UUID="
-                + id2
+                id2
                 + " /home"
                 + 17 * " "
-                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,space_cache=v2,subvol=/@home"
-                + 31 * " "
-                + "0 0\n"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,"
+                + "space_cache=v2,subvol=/@home 0 0\n"
             )
             f.write(
-                "UUID="
-                + id2
-                + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@pkg"
-                + 32 * " "
-                + "0 0\n"
+                id2
+                + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,discard=async,"
+                + "space_cache=v2,subvol=/@pkg 0 0\n"
             )
             f.write(
-                "UUID="
-                + id2
+                id2
                 + " /var/log"
                 + 14 * " "
-                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,space_cache=v2,subvol=/@log"
-                + 32 * " "
-                + "0 0\n"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,"
+                + "space_cache=v2,subvol=/@log 0 0\n"
             )
     with open(mnt_dir + "/etc/fstab", "a") as f:
-        f.write(
-            "UUID="
-            + id1
-            + 28 * " "
-            + "/boot"
-            + 17 * " "
-            + "vfat  rw,relatime,fmask=0022,dmask=0022,codepage=437,"
-            + ("iocharset=ascii," if not simple_vfat else "")
-            + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
-        )
+        boot_fs = get_parttype(ldev + "p1")
+        if boot_fs == "vfat":
+            f.write(
+                id1
+                + ((28 * " ") if len(id1) == 14 else "")
+                + "/boot"
+                + 17 * " "
+                + boot_fs
+                + (" " if fs == "btrfs" else "")
+                + "  rw,relatime,fmask=0022,dmask=0022,codepage=437,"
+                + ("iocharset=ascii," if not simple_vfat else "")
+                + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
+            )
+        else:
+            f.write(
+                get_fsline(ldev + "p1")
+                + " /boot"
+                + 17 * " "
+                + boot_fs
+                + (" " if fs == "btrfs" else "")
+                + " rw,relatime,errors=remount-ro 0 2\n"
+            )
 
 
 def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
@@ -437,10 +435,10 @@ def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
         f.write(configtxt)
         # add append root=UUID=... + cmdline
         if "partition_table_root" in cfg:
-            root_uuid = get_uuid(ldev + "p1")
+            root_uuid = get_fsline(ldev + "p1")
         else:
-            root_uuid = get_uuid(ldev + "p2")
-        f.write("    append root=UUID=" + root_uuid + " " + cmdline)
+            root_uuid = get_fsline(ldev + "p2")
+        f.write("    append root=" + root_uuid + " " + cmdline)
 
 
 def cleanup(work_dir) -> None:
@@ -465,7 +463,7 @@ def compressimage(img_name) -> None:
         [
             "xz",
             "-k",
-            "-9",
+            "-5" if not args.fast_forward else "-1",
             "-T0",
             "--verbose",
             "-f",
@@ -570,8 +568,8 @@ def main():
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
         with open(mnt_dir + "/boot/cmdline.txt", "w") as f:
-            root_uuid = get_uuid(ldev + "p2")
-            f.write("root=UUID=" + root_uuid + " " + cmdline)
+            root_uuid = get_fsline(ldev + "p2")
+            f.write("root=" + root_uuid + " " + cmdline)
         with open(work_dir + "/mnt/boot/config.txt", "a") as f:
             f.write(configtxt)
         create_fstab(cfg["fs"], ldev)
@@ -719,7 +717,7 @@ def main():
         subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
         copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
         create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev)
-        create_fstab(cfg["fs"], ldev, simple_vfat=True, no_discard=True)
+        create_fstab(cfg["fs"], ldev, simple_vfat=True)
         unmount(cfg["img_backend"], mnt_dir, ldev)
         cleanup(cfg["img_backend"])
         if args.no_compress:
