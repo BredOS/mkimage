@@ -83,11 +83,11 @@ def verify_config():
     try:
         cfg["partition_suffix"] = profiledef.partition_suffix
     except AttributeError:
-        cfg["partition_suffix"] = []
+        cfg["partition_suffix"] = lambda config_dir, disk: []
     try:
         cfg["partition_prefix"] = profiledef.partition_prefix
     except AttributeError:
-        cfg["partition_prefix"] = []
+        cfg["partition_prefix"] = lambda config_dir, disk: []
     cfg["config_dir"] = config_dir
     cfg["work_dir"] = work_dir
 
