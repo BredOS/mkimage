@@ -373,7 +373,7 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
                 id2
                 + " /"
                 + 21 * " "
-                + "btrfs rw,relatime,ssd,discard=async"
+                + "btrfs rw,relatime,ssd"
                 + ",compress=zstd,space_cache=v2,subvol=/@ 0 0\n"
             )
             f.write(
