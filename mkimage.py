@@ -59,6 +59,10 @@ def verify_config():
     cfg["arch"] = profiledef.arch
     cfg["cmdline"] = profiledef.cmdline
     cfg["configtxt"] = profiledef.configtxt
+    try:
+        cfg["configtxt_suffix"] = profiledef.configtxt_suffix
+    except AttributeError:
+        cfg["configtxt_suffix"] = None
     cfg["device"] = profiledef.device
     cfg["edition"] = profiledef.edition
     cfg["fs"] = profiledef.fs
@@ -439,6 +443,8 @@ def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
         else:
             root_uuid = get_fsline(ldev + "p2")
         f.write("    append root=" + root_uuid + " " + cmdline)
+        if cfg["configtxt_suffix"] is not None:
+            f.write(cfg["configtxt_suffix"])
 
 
 def cleanup(work_dir) -> None:
