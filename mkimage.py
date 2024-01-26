@@ -783,28 +783,59 @@ def main():
             compressimage(cfg["img_name"])
         cleanup(cfg["work_dir"])
     elif cfg["device"] == "edge2":
-        # copyfiles(config_dir+ "/alarmimg",cfg["install_dir"])
-        # pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
-        # subprocess.run(' '.join(["rm", "-rf",
-        #     cfg["install_dir"] + "/etc/machine-id",
-        #     cfg["install_dir"] + "/var/lib/dbus/machine-id"]),shell=True)
-        # fixperms(cfg["install_dir"])
-        # logging.info("Partitioning edge 2")
-        # rootfs_size=int(subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]]).split()[0].decode("utf-8"))
-        # img_size,ldev = makeimg(rootfs_size,fs,cfg["img_name"],img_backend)
-        # partition_edge2(ldev, fs, img_size)
-        # logging.info("Partitioned edge 2 successfully")
-        # if not os.path.exists(mnt_dir):
-        #     os.mkdir(mnt_dir)
-        # subprocess.run("mount " + ldev+"p1 " + mnt_dir + "/boot",shell=True)
-        # copyfiles(cfg["install_dir"], mnt_dir,retainperms=True)
-        # create_extlinux_conf()
-        # create_fstab(cfg["fs"], ldev)
-        # cleanup(cfg["img_backend"])
+        copyfiles(config_dir + "/alarmimg", cfg["install_dir"])
+        fixperms(cfg["install_dir"])
+        pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
+        machine_id()
+        fixperms(cfg["install_dir"])
+        logging.info("Partitioning edge2")
+        rootfs_size = int(
+            subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
+            .split()[0]
+            .decode("utf-8")
+        )
+        img_size, ldev = makeimg(
+            rootfs_size, cfg["fs"], cfg["img_name"], cfg["img_backend"]
+        )
+        partition(
+            ldev,
+            cfg["fs"],
+            img_size,
+            cfg["partition_table"](img_size, cfg["fs"]),
+        )
+        if not os.path.exists(mnt_dir + "/boot"):
+            os.mkdir(mnt_dir + "/boot")
+        subprocess.run("mount " + ldev + "p1 " + mnt_dir + "/boot", shell=True)
+        copyfiles(cfg["install_dir"], mnt_dir, retainperms=True)
+        create_extlinux_conf(mnt_dir, cfg["configtxt"], cfg["cmdline"], ldev)
+        create_fstab(cfg["fs"], ldev, simple_vfat=True)
+        unmount(cfg["img_backend"], mnt_dir, ldev)
+        cleanup(cfg["img_backend"])
         if args.no_compress:
+            logging.info(
+                "The image will not have metadata for oowow applied since it's not compressed!"
+            )
             copyimage(cfg["img_name"])
         else:
             compressimage(cfg["img_name"])
+            subprocess.check_output(["chmod", "+x", config_dir + "/xze"])
+            subprocess.check_output(
+                [
+                    config_dir + "/xze",
+                    cfg["out_dir"] + "/" + cfg["img_name"] + ".img.xz",
+                    "--meta",
+                    "label=BredOS",
+                    "builder=BredOS",
+                    "date=" + time.ctime().replace("  ", " "),
+                    "match=BOARD=Edge2",
+                    "link=https://bredos.org/",
+                    "duration=250",
+                    "desc=Edge2 BredOS "
+                    + cfg["edition"]
+                    + " edition v"
+                    + cfg["img_version"],
+                ]
+            )
         cleanup(cfg["work_dir"])
 
 
