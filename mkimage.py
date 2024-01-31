@@ -430,6 +430,29 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
                 + " rw,relatime,errors=remount-ro 0 2\n"
             )
 
+def copy_skel_to_users() -> None:
+    non_root_users = []
+
+    try:
+        with open(cfg["install_dir"] + '/etc/passwd', 'r') as passwd_file:
+            lines = passwd_file.readlines()
+
+        for line in lines:
+            parts = line.split(':')
+            username = parts[0]
+            uid = int(parts[2])
+
+            if uid != 0 and uid > 1000 and uid < 2000:  # Check if the user ID is not root (UID 0)
+                non_root_users.append(username)
+
+    except FileNotFoundError:
+        print("Error: No passwd file not found.")
+
+    for user in non_root_users:
+        logging.info("Copying skel to " + user)
+        subprocess.run(["mkdir", "-p", cfg["install_dir"] + "/home/" + user])
+        subprocess.run("cp -r " + cfg["install_dir"] + "/etc/skel/. " + cfg["install_dir"] + "/home/" + user, shell=True)
+
 
 def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
     if not os.path.exists(mnt_dir + "/boot/extlinux"):
@@ -557,6 +580,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
+        copy_skel_to_users()
         logging.info("Partitioning rpi")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
@@ -592,6 +616,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
+        copy_skel_to_users()
         logging.info("Partitioning rock5b")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
@@ -623,6 +648,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
+        copy_skel_to_users()
         logging.info("Partitioning rock5b-split")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
@@ -664,6 +690,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
+        copy_skel_to_users()
         logging.info("Partitioning rock4c-plus")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
@@ -703,6 +730,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
+        copy_skel_to_users()
         logging.info("Partitioning vim4")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
@@ -758,6 +786,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
+        copy_skel_to_users()
         logging.info("Partitioning cpi4")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
@@ -788,6 +817,7 @@ def main():
         pacstrap_packages(pacman_conf, cfg["packages_file"], cfg["install_dir"])
         machine_id()
         fixperms(cfg["install_dir"])
+        copy_skel_to_users()
         logging.info("Partitioning edge2")
         rootfs_size = int(
             subprocess.check_output(["du", "-s", "--exclude=proc", cfg["install_dir"]])
