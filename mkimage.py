@@ -54,7 +54,7 @@ def verify_config():
     sys.path.insert(0, work_dir)
     subprocess.run(["cp", config_dir + "/profiledef", work_dir + "/profiledef.py"])
 
-    import profiledef
+    import profiledef # type: ignore
 
     cfg["arch"] = profiledef.arch
     cfg["cmdline"] = profiledef.cmdline
@@ -116,13 +116,13 @@ def verify_config():
         logging.error("Filesystem not supported use ext4 or btrfs")
         exit(1)
     if not os.path.isfile(packages_file):
-        logging.error("packages file doesnt exist create the file packages." + arch)
+        logging.error("packages file doesnt exist create the file packages." + cfg["arch"])
         exit(1)
-    if cfg["img_type"] not in ["image", "rootfs", "qcow2"]:
-        logging.error("Image type not supported use image, rootfs or qcow2")
+    if cfg["img_type"] not in ["image", "rootfs"]:
+        logging.error("Image type not supported use image or rootfs ")
         exit(1)
-    if cfg["img_backend"] not in ["loop", "qemu-nbd"]:
-        logging.error("Image backend not supported use loop or qemu-nbd")
+    if cfg["img_backend"] not in ["loop"]:
+        logging.error("Image backend not supported use loop")
         exit(1)
 
     with open(packages_file, "r") as f:
@@ -139,12 +139,12 @@ def runonce(thing) -> bool:
         return True
 
 
-def get_fsline(device):
+def get_fsline(device) -> str: # type: ignore
     fl = subprocess.check_output(["blkid", device]).decode("utf-8")
     spl = fl.split(" ")
     for i in spl:
         if i.startswith("UUID="):
-            return i.replace('"', "")
+            return str(i.replace('"', ""))
 
 
 def get_parttype(device):
@@ -210,49 +210,25 @@ def makeimg(size, fs, img_name, backend):
     image_ext = ".img"
     img_size = size + int(1100000)
 
-    if img_name == "qcow2":
-        logging.info("Creating image file " + img_name + ".qcow2")
-        subprocess.run(
-            [
-                "qemu-img",
-                "create",
-                "-f",
-                "qcow2",
-                work_dir + "/" + img_name + ".qcow2",
-                str(img_size) + "K",
-            ]
-        )
-    else:
-        logging.info("Creating image file " + img_name + ".img")
-        subprocess.run(
-            [
-                "dd",
-                "if=/dev/zero",
-                "of=" + work_dir + "/" + img_name + ".img",
-                "bs=1k",
-                "count=" + str(img_size),
-                "status=progress",
-            ]
-        )
+    logging.info("Creating image file " + img_name + ".img")
+    subprocess.run(
+        [
+            "dd",
+            "if=/dev/zero",
+            "of=" + work_dir + "/" + img_name + ".img",
+            "bs=1k",
+            "count=" + str(img_size),
+            "status=progress",
+        ]
+    )
 
-    if backend == "qemu-nbd":
-        subprocess.run(
-            [
-                "qemu-nbd",
-                "--connect",
-                ldev,
-                work_dir + "/" + img_name + image_ext,
-                "--format",
-                format,
-            ]
-        )
-    else:
-        subprocess.run(["modprobe", "loop"])
-        logging.info(
-            "Attaching image file " + img_name + ".img to loop device " + next_loop()
-        )
-        ldev = next_loop()
-        subprocess.run(["losetup", ldev, work_dir + "/" + img_name + ".img"])
+
+    subprocess.run(["modprobe", "loop"])
+    logging.info(
+        "Attaching image file " + img_name + ".img to loop device " + next_loop()
+    )
+    ldev = next_loop()
+    subprocess.run(["losetup", ldev, work_dir + "/" + img_name + ".img"])
 
     logging.info("Image file created")
     return img_size, ldev
@@ -405,12 +381,12 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
             )
         else:
             f.write(
-                get_fsline(ldev + "p1")
+                get_fsline(ldev + "p1") # type: ignore
                 + " /boot"
                 + 17 * " "
-                + boot_fs
+                + boot_fs 
                 + (" " if fs == "btrfs" else "")
-                + " rw,relatime,errors=remount-ro 0 2\n"
+                + " rw,relatime,errors=remount-ro 0 2\n" 
             )
 
 def copy_skel_to_users() -> None:
@@ -465,8 +441,6 @@ def unmount(img_backend, mnt_dir, ldev, ldev_alt=None) -> None:
         subprocess.run(["losetup", "-d", ldev])
         if ldev_alt is not None:
             subprocess.run(["losetup", "-d", ldev_alt])
-    elif img_backend == "qemu-nbd":
-        subprocess.run(["qemu-nbd", "-d", ldev])
 
 
 def compressimage(img_name) -> None:
@@ -571,10 +545,8 @@ def handler(signal_received, frame):
     except:
         pass
     try:
-        if img_backend == "loop":
+        if cfg["img_backend"] == "loop":
             subprocess.run(["losetup", "-d", ldev])
-        elif img_backend == "qemu-nbd":
-            subprocess.run(["qemu-nbd", "-d", ldev])
     except:
         pass
     exit(0)
@@ -587,10 +559,7 @@ def next_loop() -> str:
 if __name__ == "__main__":
     cfg = verify_config()
     if cfg["img_backend"] == "loop":
-        next_loop()
-    elif cfg["img_backend"] == "qemu-nbd":
-        subprocess.run(["modprobe", "nbd"])
-        ldev = "/dev/nbd2"
+        ldev = next_loop()
     signal(SIGINT, handler)
     signal(SIGTERM, handler)
     # get start time
