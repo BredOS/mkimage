@@ -54,7 +54,7 @@ def verify_config():
     sys.path.insert(0, work_dir)
     subprocess.run(["cp", config_dir + "/profiledef", work_dir + "/profiledef.py"])
 
-    import profiledef # type: ignore
+    import profiledef  # type: ignore
 
     cfg["arch"] = profiledef.arch
     cfg["cmdline"] = profiledef.cmdline
@@ -116,7 +116,9 @@ def verify_config():
         logging.error("Filesystem not supported use ext4 or btrfs")
         exit(1)
     if not os.path.isfile(packages_file):
-        logging.error("packages file doesnt exist create the file packages." + cfg["arch"])
+        logging.error(
+            "packages file doesnt exist create the file packages." + cfg["arch"]
+        )
         exit(1)
     if cfg["img_type"] not in ["image", "rootfs"]:
         logging.error("Image type not supported use image or rootfs ")
@@ -139,7 +141,7 @@ def runonce(thing) -> bool:
         return True
 
 
-def get_fsline(device) -> str: # type: ignore
+def get_fsline(device) -> str:  # type: ignore
     fl = subprocess.check_output(["blkid", device]).decode("utf-8")
     spl = fl.split(" ")
     for i in spl:
@@ -221,7 +223,6 @@ def makeimg(size, fs, img_name, backend):
             "status=progress",
         ]
     )
-
 
     subprocess.run(["modprobe", "loop"])
     logging.info(
@@ -381,27 +382,30 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
             )
         else:
             f.write(
-                get_fsline(ldev + "p1") # type: ignore
+                get_fsline(ldev + "p1")  # type: ignore
                 + " /boot"
                 + 17 * " "
-                + boot_fs 
+                + boot_fs
                 + (" " if fs == "btrfs" else "")
-                + " rw,relatime,errors=remount-ro 0 2\n" 
+                + " rw,relatime,errors=remount-ro 0 2\n"
             )
+
 
 def copy_skel_to_users() -> None:
     non_root_users = []
 
     try:
-        with open(cfg["install_dir"] + '/etc/passwd', 'r') as passwd_file:
+        with open(cfg["install_dir"] + "/etc/passwd", "r") as passwd_file:
             lines = passwd_file.readlines()
 
         for line in lines:
-            parts = line.split(':')
+            parts = line.split(":")
             username = parts[0]
             uid = int(parts[2])
 
-            if uid != 0 and uid > 1000 and uid < 2000:  # Check if the user ID is not root (UID 0)
+            if (
+                uid != 0 and uid > 1000 and uid < 2000
+            ):  # Check if the user ID is not root (UID 0)
                 non_root_users.append(username)
 
     except FileNotFoundError:
@@ -410,7 +414,15 @@ def copy_skel_to_users() -> None:
     for user in non_root_users:
         logging.info("Copying skel to " + user)
         subprocess.run(["mkdir", "-p", cfg["install_dir"] + "/home/" + user])
-        subprocess.run("cp -r " + cfg["install_dir"] + "/etc/skel/. " + cfg["install_dir"] + "/home/" + user, shell=True)
+        subprocess.run(
+            "cp -r "
+            + cfg["install_dir"]
+            + "/etc/skel/. "
+            + cfg["install_dir"]
+            + "/home/"
+            + user,
+            shell=True,
+        )
 
 
 def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
@@ -429,12 +441,16 @@ def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
             f.write(cfg["configtxt_suffix"])
 
 
-def cleanup(work_dir) -> None:
+def run_chroot_cmd(work_dir: str, cmd: str) -> None:
+    subprocess.run(["arch-chroot", work_dir + "/mnt", cmd])
+
+
+def cleanup(work_dir: str) -> None:
     logging.info("Cleaning up")
     subprocess.run(["rm", "-rf", work_dir])
 
 
-def unmount(img_backend, mnt_dir, ldev, ldev_alt=None) -> None:
+def unmount(img_backend: str, mnt_dir: str, ldev: str, ldev_alt: str = None) -> None:
     logging.info("Unmounting!")
     subprocess.run(["umount", "-R", mnt_dir])
     if img_backend == "loop":
@@ -443,7 +459,7 @@ def unmount(img_backend, mnt_dir, ldev, ldev_alt=None) -> None:
             subprocess.run(["losetup", "-d", ldev_alt])
 
 
-def compressimage(img_name) -> None:
+def compressimage(img_name: str) -> None:
     logging.info("Compressing " + img_name + ".img")
     subprocess.run(
         [
@@ -470,7 +486,7 @@ def compressimage(img_name) -> None:
     logging.info("Compressed " + img_name + ".img")
 
 
-def copyimage(img_name) -> None:
+def copyimage(img_name: str) -> None:
     logging.info("Copying " + img_name + ".img")
     # Move the image to the correct output directory
     subprocess.run(
@@ -480,7 +496,7 @@ def copyimage(img_name) -> None:
     logging.info("Copied " + img_name + ".img")
 
 
-def copyfiles(ot, to, retainperms=False) -> None:
+def copyfiles(ot: str, to: str, retainperms=False) -> None:
     logging.info("Copying files to " + to)
     if retainperms:
         subprocess.run("cp -apr " + ot + "/* " + to, shell=True)
