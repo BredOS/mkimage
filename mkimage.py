@@ -72,6 +72,11 @@ def verify_config():
     cfg["perms"] = profiledef.perms
     cfg["mkcmds"] = profiledef.mkcmds
     try:
+        cfg["grubcmdl"] = profiledef.grubcmdl
+        cfg["grubdtb"] = profiledef.grubdtb
+    except AttributeError:
+        pass
+    try:
         cfg["part_type"] = "gpt" if profiledef.use_gpt else "msdos"
     except AttributeError:
         cfg["part_type"] = "gpt"
@@ -441,8 +446,24 @@ def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
             f.write(cfg["configtxt_suffix"])
 
 
-def run_chroot_cmd(work_dir: str, cmd: str) -> None:
-    subprocess.run(["arch-chroot", work_dir + "/mnt", cmd])
+def run_chroot_cmd(work_dir: str, cmd: list) -> None:
+    subprocess.run(["arch-chroot", work_dir] + cmd)
+
+
+def grub_install(mnt_dir: str) -> None:
+    grubfile = open(mnt_dir + "/etc/default/grub")
+    grubconf = grubfile.read()
+    grubfile.close()
+    grubcmdl = cfg["grubcmdl"]
+    grubdtb = cfg["grubdtb"]
+    grubconf = grubconf.replace('GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet"', f'GRUB_CMDLINE_LINUX_DEFAULT="{grubcmdl}"').replace('# GRUB_DTB="path_to_dtb_file"', f'GRUB_DTB="{grubdtb}"')
+    grubfile = open(mnt_dir + "/etc/default/grub", "w")
+    grubfile.write(grubconf)
+    grubfile.close()
+    run_chroot_cmd(mnt_dir, ["grub-install", "--target=arm64-efi", "--efi-directory=/boot", "--removable"])
+    if not os.path.exists(mnt_dir + "/boot/grub"):
+        os.mkdir(mnt_dir + "/boot/grub")
+    run_chroot_cmd(mnt_dir, ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"])
 
 
 def cleanup(work_dir: str) -> None:
