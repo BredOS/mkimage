@@ -220,12 +220,10 @@ def makeimg(size, fs, img_name, backend):
     logging.info("Creating image file " + img_name + ".img")
     subprocess.run(
         [
-            "dd",
-            "if=/dev/zero",
-            "of=" + work_dir + "/" + img_name + ".img",
-            "bs=1k",
-            "count=" + str(img_size),
-            "status=progress",
+            "fallocate",
+            "-l",
+            str(img_size) + "K",
+            work_dir + "/" + img_name + ".img",
         ]
     )
 
