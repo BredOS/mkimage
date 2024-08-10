@@ -97,6 +97,10 @@ def verify_config():
         cfg["partition_prefix"] = profiledef.partition_prefix
     except AttributeError:
         cfg["partition_prefix"] = lambda config_dir, disk: []
+    try:
+        cfg["has_uefi"] = profiledef.has_uefi
+    except AttributeError:
+        cfg["has_uefi"] = False
     cfg["config_dir"] = config_dir
     cfg["work_dir"] = work_dir
 
@@ -238,22 +242,35 @@ def makeimg(size, fs, img_name, backend):
     return img_size, ldev
 
 
-def partition(disk, fs, img_size, partition_table, split=False):
+def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
     table = [["Partition", "Start", "End", "Size", "Filesystem"]]
-    prtd_cmd = [
+    if has_uefi:
+        prtd_cmd = [
         "parted",
         "--script",
         disk,
         "--align",
         "optimal",
-        "mklabel",
-        cfg["part_type"],
     ]
+    else:
+        prtd_cmd = [
+            "parted",
+            "--script",
+            disk,
+            "--align",
+            "optimal",
+            "mklabel",
+            cfg["part_type"],
+        ]
     ld_partition_table = partition_table
 
     for i in ld_partition_table.keys():
         table.append([i] + partition_table[i])
         if partition_table[i][3] == "fat32":
+            if has_uefi:
+                part_num = str(2)
+            else:
+                part_num = str(1)
             prtd_cmd += [
                 "mkpart",
                 "primary",
@@ -261,12 +278,12 @@ def partition(disk, fs, img_size, partition_table, split=False):
                 ld_partition_table[i][0],
                 ld_partition_table[i][1],
                 "set",
-                "1",
+                part_num,
                 "boot",
                 "on",
             ]
             if cfg["boot_set_esp"]:
-                prtd_cmd += ["set", "1", "esp", "on"]
+                prtd_cmd += ["set", part_num, "esp", "on"]
         elif ld_partition_table[i][3] == "NONE":
             pass
         else:
@@ -302,7 +319,7 @@ def partition(disk, fs, img_size, partition_table, split=False):
     if not os.path.exists(mnt_dir):
         os.mkdir(mnt_dir)
 
-    idf = "p2" if not split else "p1"
+    idf = "p3" if has_uefi else ("p2" if not split else "p1")
 
     if fs == "ext4":
         subprocess.run("mkfs.ext4 -F -L PRIMARY " + disk + idf, shell=True)
@@ -329,8 +346,13 @@ def partition(disk, fs, img_size, partition_table, split=False):
 
 
 def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
-    id1 = get_fsline(ldev + "p1")
-    id2 = get_fsline((ldev_alt + "p1") if ldev_alt is not None else (ldev + "p2"))
+    if cfg["has_uefi"]:
+        id1 = get_fsline(ldev + "p2")
+        id2 = get_fsline(ldev + "p3")
+    else:
+        id1 = get_fsline(ldev + "p1")
+        id2 = get_fsline((ldev_alt + "p1") if ldev_alt is not None else (ldev + "p2"))
+
     if fs == "ext4":
         with open(mnt_dir + "/etc/fstab", "a") as f:
             f.write(id1 + " / ext4 defaults 0 0\n")
@@ -370,7 +392,10 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
                 + "space_cache=v2,subvol=/@log 0 0\n"
             )
     with open(mnt_dir + "/etc/fstab", "a") as f:
-        boot_fs = get_parttype(ldev + "p1")
+        if cfg["has_uefi"]:
+            boot_fs = get_parttype(ldev + "p2")
+        else:
+            boot_fs = get_parttype(ldev + "p1")
         if boot_fs == "vfat":
             f.write(
                 id1
@@ -385,7 +410,7 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
             )
         else:
             f.write(
-                get_fsline(ldev + "p1")  # type: ignore
+                (get_fsline(ldev + "p2") if not cfg["has_uefi"] else get_fsline(ldev + "p1"))
                 + " /boot"
                 + 17 * " "
                 + boot_fs
