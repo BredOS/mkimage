@@ -219,7 +219,8 @@ def pacstrap_packages(pacman_conf, packages_file, install_dir) -> None:
 def makeimg(size, fs, img_name, backend):
     format = "raw"
     image_ext = ".img"
-    img_size = size + int(1100000)
+    if not fs == "btrfs":
+        img_size = size + int(1100000)
 
     logging.info("Creating image file " + img_name + ".img")
     subprocess.run(
@@ -325,6 +326,8 @@ def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
         subprocess.run("mkfs.ext4 -F -L PRIMARY " + disk + idf, shell=True)
         subprocess.run("mount " + disk + idf + " " + mnt_dir, shell=True)
         os.mkdir(mnt_dir + "/boot")
+        if has_uefi:
+            os.mkdir(mnt_dir + "/boot/efi")
     elif fs == "btrfs":
         p2 = disk + idf + " "
         subprocess.run("mkfs.btrfs -f -L ROOTFS " + p2, shell=True)
@@ -341,6 +344,8 @@ def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
             shell=True,
         )
         os.mkdir(mnt_dir + "/boot")
+        if has_uefi:
+            os.mkdir(mnt_dir + "/boot/efi")
 
     logging.info("Partitioned successfully")
 
@@ -394,13 +399,15 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
     with open(mnt_dir + "/etc/fstab", "a") as f:
         if cfg["has_uefi"]:
             boot_fs = get_parttype(ldev + "p2")
+            mount_point = "/boot/efi"
         else:
             boot_fs = get_parttype(ldev + "p1")
+            mount_point = "/boot"
         if boot_fs == "vfat":
             f.write(
                 id1
                 + ((28 * " ") if len(id1) == 14 else "")
-                + "/boot"
+                + mount_point
                 + 17 * " "
                 + boot_fs
                 + (" " if fs == "btrfs" else "")
@@ -411,7 +418,7 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
         else:
             f.write(
                 (get_fsline(ldev + "p2") if not cfg["has_uefi"] else get_fsline(ldev + "p1"))
-                + " /boot"
+                + mount_point
                 + 17 * " "
                 + boot_fs
                 + (" " if fs == "btrfs" else "")
@@ -485,7 +492,7 @@ def grub_install(mnt_dir: str, arch: str ="arm64-efi") -> None:
     grubfile = open(mnt_dir + "/etc/default/grub", "w")
     grubfile.write(grubconf)
     grubfile.close()
-    run_chroot_cmd(mnt_dir, ["grub-install", f"--target={arch}", "--efi-directory=/boot", "--removable", "--bootloader-id=BredOS"])
+    run_chroot_cmd(mnt_dir, ["grub-install", f"--target={arch}", "--efi-directory=/boot/efi", "--removable", "--bootloader-id=BredOS"])
     if not os.path.exists(mnt_dir + "/boot/grub"):
         os.mkdir(mnt_dir + "/boot/grub")
     run_chroot_cmd(mnt_dir, ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"])
