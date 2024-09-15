@@ -221,6 +221,8 @@ def makeimg(size, fs, img_name, backend):
     image_ext = ".img"
     if not fs == "btrfs":
         img_size = size + int(1100000)
+    else:
+        img_size = size
 
     logging.info("Creating image file " + img_name + ".img")
     subprocess.run(
