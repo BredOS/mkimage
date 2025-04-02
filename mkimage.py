@@ -117,7 +117,7 @@ def verify_config():
         logging.error("Image version not set")
         exit(1)
 
-    install_dir = work_dir + "/" + cfg["arch"]
+    install_dir = work_dir + ("/" if not work_dir.endswith("/") else "") + cfg["arch"]
     cfg["install_dir"] = install_dir
     subprocess.run(["mkdir", "-p", install_dir])
 
@@ -460,6 +460,9 @@ def copy_skel_to_users() -> None:
             + user,
             shell=True,
         )
+
+    with open(cfg["install_dir"] + "/version", "w") as f:
+        f.write("BredOS " + cfg["img_version"] + "\n")
 
 
 def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
