@@ -369,33 +369,33 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
                 id2
                 + " /"
                 + 21 * " "
-                + "btrfs rw,relatime,ssd,noatime"
+                + "btrfs rw,relatime,ssd"
                 + ",compress=zstd,space_cache=v2,subvol=/@ 0 0\n"
             )
             f.write(
                 id2
                 + " /.snapshots"
                 + 11 * " "
-                + "btrfs rw,relatime,ssd,noatime,discard=async,compress=zstd,"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,"
                 + "space_cache=v2,subvol=/@.snapshots 0 0\n"
             )
             f.write(
                 id2
                 + " /home"
                 + 17 * " "
-                + "btrfs rw,relatime,ssd,noatime,discard=async,compress=zstd,"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,"
                 + "space_cache=v2,subvol=/@home 0 0\n"
             )
             f.write(
                 id2
-                + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,noatime,discard=async,"
+                + " /var/cache/pacman/pkg btrfs rw,relatime,ssd,discard=async,"
                 + "space_cache=v2,subvol=/@pkg 0 0\n"
             )
             f.write(
                 id2
                 + " /var/log"
                 + 14 * " "
-                + "btrfs rw,relatime,ssd,noatime,discard=async,compress=zstd,"
+                + "btrfs rw,relatime,ssd,discard=async,compress=zstd,"
                 + "space_cache=v2,subvol=/@log 0 0\n"
             )
     with open(mnt_dir + "/etc/fstab", "a") as f:
