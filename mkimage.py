@@ -412,7 +412,6 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
                 + mount_point
                 + 17 * " "
                 + boot_fs
-                + (" " if fs == "btrfs" else "")
                 + "  rw,relatime,fmask=0022,dmask=0022,codepage=437,"
                 + ("iocharset=ascii," if not simple_vfat else "")
                 + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
