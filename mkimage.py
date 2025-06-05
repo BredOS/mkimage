@@ -85,6 +85,14 @@ def verify_config():
     except AttributeError:
         cfg["boot_set_esp"] = True
     try:
+        cfg["uboot_parts"] = profiledef.uboot_parts
+    except AttributeError:
+        cfg["uboot_parts"] = 0
+    try:
+        cfg["recreate_part_table"] = profiledef.recreate_part_table
+    except AttributeError:
+        cfg["recreate_part_table"] = False
+    try:
         cfg["partition_table"] = profiledef.partition_table
     except AttributeError:
         cfg["partition_table_boot"] = profiledef.partition_table_boot
@@ -247,7 +255,7 @@ def makeimg(size, fs, img_name, backend):
 
 def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
     table = [["Partition", "Start", "End", "Size", "Filesystem"]]
-    if has_uefi:
+    if has_uefi or not cfg["recreate_part_table"]:
         prtd_cmd = [
         "parted",
         "--script",
@@ -322,7 +330,15 @@ def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
     if not os.path.exists(mnt_dir):
         os.mkdir(mnt_dir)
 
-    idf = "p3" if has_uefi else ("p2" if not split else "p1")
+    # idf = "p3" if has_uefi else ("p2" if not split else "p1")
+    if has_uefi:
+        idf="p3"
+    elif cfg["uboot_parts"]:
+        idf="p" + str(2 + cfg["uboot_parts"])
+    elif not split:
+        idf="p2"
+    else:
+        idf="p1"
 
     if fs == "ext4":
         subprocess.run("mkfs.ext4 -F -L PRIMARY " + disk + idf, shell=True)
@@ -354,8 +370,11 @@ def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
 
 def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
     if cfg["has_uefi"]:
-        id1 = get_fsline(ldev + "p2")
-        id2 = get_fsline(ldev + "p3")
+        id1 = get_fsline(ldev + "p2") # EFI
+        id2 = get_fsline(ldev + "p3") # ROOT
+    elif cfg["uboot_parts"]:
+        id1 = get_fsline(ldev + "p" + str(1 + cfg["uboot_parts"])) 
+        id2 = get_fsline(ldev + "p" + str(2 + cfg["uboot_parts"])) # ROOT
     else:
         id1 = get_fsline(ldev + "p1")
         id2 = get_fsline((ldev_alt + "p1") if ldev_alt is not None else (ldev + "p2"))
@@ -402,6 +421,9 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
         if cfg["has_uefi"]:
             boot_fs = get_parttype(ldev + "p2")
             mount_point = "/boot/efi"
+        elif cfg["uboot_parts"]:
+            boot_fs = get_parttype(ldev + "p" + str(1 + cfg["uboot_parts"]))
+            mount_point = "/boot/"
         else:
             boot_fs = get_parttype(ldev + "p1")
             mount_point = "/boot"
@@ -412,6 +434,7 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
                 + mount_point
                 + 17 * " "
                 + boot_fs
+                + (" " if fs == "btrfs" else "")
                 + "  rw,relatime,fmask=0022,dmask=0022,codepage=437,"
                 + ("iocharset=ascii," if not simple_vfat else "")
                 + "shortname=mixed,utf8,errors=remount-ro 0 2\n"
@@ -473,6 +496,8 @@ def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
         # add append root=UUID=... + cmdline
         if "partition_table_root" in cfg:
             root_uuid = get_fsline(ldev + "p1")
+        elif cfg["uboot_parts"]:
+            root_uuid = get_fsline(ldev + "p" + str(2 + cfg["uboot_parts"]))
         else:
             root_uuid = get_fsline(ldev + "p2")
         f.write("    append root=" + root_uuid + " " + cmdline)
