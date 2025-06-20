@@ -91,7 +91,7 @@ def verify_config():
     try:
         cfg["recreate_part_table"] = profiledef.recreate_part_table
     except AttributeError:
-        cfg["recreate_part_table"] = False
+        cfg["recreate_part_table"] = True
     try:
         cfg["partition_table"] = profiledef.partition_table
     except AttributeError:
@@ -486,6 +486,14 @@ def copy_skel_to_users() -> None:
     with open(cfg["install_dir"] + "/version", "w") as f:
         f.write("BredOS " + cfg["img_version"] + "\n")
 
+
+def u_boot_update(mnt_dir: str, configtxt: str) -> None:
+    logging.info("Updating U-Boot")
+    if not os.path.exists(mnt_dir + "/etc/default/"):
+        os.makedirs(mnt_dir + "/etc/default/")
+    with open(mnt_dir + "/etc/default/u-boot", "w") as f:
+        f.write(configtxt)
+    run_chroot_cmd(mnt_dir, ["u-boot-update"])
 
 def create_extlinux_conf(mnt_dir, configtxt, cmdline, ldev) -> None:
     if not os.path.exists(mnt_dir + "/boot/extlinux"):
