@@ -441,7 +441,8 @@ def create_fstab(fs, ldev, ldev_alt=None, simple_vfat=False) -> None:
             )
         else:
             f.write(
-                (get_fsline(ldev + "p2") if not cfg["has_uefi"] else get_fsline(ldev + "p1"))
+                (get_fsline(ldev + "p1") if not cfg["has_uefi"] else get_fsline(ldev + "p1"))
+                + " "
                 + mount_point
                 + 17 * " "
                 + boot_fs
