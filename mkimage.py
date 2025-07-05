@@ -57,7 +57,10 @@ def verify_config():
     import profiledef  # type: ignore
 
     cfg["arch"] = profiledef.arch
-    cfg["cmdline"] = profiledef.cmdline
+    try:
+        cfg["cmdline"] = profiledef.cmdline
+    except AttributeError:
+        cfg["cmdline"] = None
     cfg["configtxt"] = profiledef.configtxt
     try:
         cfg["configtxt_suffix"] = profiledef.configtxt_suffix
