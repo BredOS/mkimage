@@ -25,7 +25,7 @@ To use this project, you will need:
 To use this project, clone the repository to your local machine:
 
 ```bash
-git clone https://github.com/RebornOS-Developers/mkimage
+git clone https://github.com/BredOS/mkimage
 ```
 # Usage
 
