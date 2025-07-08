@@ -256,6 +256,10 @@ def makeimg(size, fs, img_name, backend):
     subprocess.run(["losetup", "-P", ldev, work_dir + "/" + img_name + ".img"])
 
     logging.info("Image file created")
+    if args.ci:
+        subprocess.run(["ln", "-s", ldev, ldev.replace("/dev/", "/dev/mapper/")])
+        ldev = ldev.replace("/dev/", "/dev/mapper/")
+    
     return img_size, ldev
 
 
@@ -327,13 +331,13 @@ def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
             subprocess.run(i)
 
     if args.ci:
-        subprocess.run(["partprobe", disk])
+        subprocess.run(["kpartx", "-avf", disk])
 
     logging.info(f"Full command: {prtd_cmd}")
     subprocess.run(prtd_cmd)
 
     if args.ci:
-        subprocess.run(["partprobe", disk])
+        subprocess.run(["kpartx", "-avf", disk])
 
     if not split:
         for i in cfg["partition_suffix"](config_dir, disk):
@@ -556,10 +560,17 @@ def cleanup(work_dir: str) -> None:
 def unmount(img_backend: str, mnt_dir: str, ldev: str, ldev_alt: str = None) -> None:
     logging.info("Unmounting!")
     subprocess.run(["umount", "-R", mnt_dir])
-    if img_backend == "loop":
+    if img_backend == "loop" and not args.ci:
         subprocess.run(["losetup", "-d", ldev])
         if ldev_alt is not None:
             subprocess.run(["losetup", "-d", ldev_alt])
+    elif img_backend == "loop" and args.ci:
+        subprocess.run(["kpartx", "-d", ldev])
+        subprocess.run(["losetup", "-d", ldev])
+        if ldev_alt is not None:
+            subprocess.run(["kpartx", "-d", ldev_alt])
+            subprocess.run(["losetup", "-d", ldev_alt])
+        subprocess.run(["unlink", ldev])
 
 
 def compressimage(img_name: str) -> None:
