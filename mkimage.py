@@ -23,6 +23,9 @@ parser.add_argument(
     "-c", "--config_dir", help="Folder with config files", required=True
 )
 parser.add_argument("-o", "--out_dir", help="Folder to put output files", required=True)
+parser.add_argument(
+    "--ci", help="Required for building in GH Actions", action="store_true"
+)
 args = parser.parse_args()
 
 
@@ -323,8 +326,14 @@ def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
         for i in cfg["partition_prefix"](config_dir, disk):
             subprocess.run(i)
 
+    if args.ci:
+        subprocess.run(["partprobe", disk])
+
     logging.info(f"Full command: {prtd_cmd}")
     subprocess.run(prtd_cmd)
+
+    if args.ci:
+        subprocess.run(["partprobe", disk])
 
     if not split:
         for i in cfg["partition_suffix"](config_dir, disk):
