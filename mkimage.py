@@ -250,7 +250,7 @@ def makeimg(size, fs, img_name, backend):
         "Attaching image file " + img_name + ".img to loop device " + next_loop()
     )
     ldev = next_loop()
-    subprocess.run(["losetup", ldev, work_dir + "/" + img_name + ".img"])
+    subprocess.run(["losetup", "-P", ldev, work_dir + "/" + img_name + ".img"])
 
     logging.info("Image file created")
     return img_size, ldev
@@ -342,7 +342,7 @@ def partition(disk, fs, img_size, partition_table, split=False, has_uefi=False):
         idf="p2"
     else:
         idf="p1"
-
+    subprocess.run(["lsblk"])
     if fs == "ext4":
         subprocess.run("mkfs.ext4 -F -L PRIMARY " + disk + idf, shell=True)
         subprocess.run("mount " + disk + idf + " " + mnt_dir, shell=True)
